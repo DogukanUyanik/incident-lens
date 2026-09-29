@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: incidentlens
+      POSTGRES_PASSWORD: incidentlens
+      POSTGRES_DB: incidentlens
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U incidentlens -d incidentlens"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+
+  order-service:
+    build: ./services/order-service
+    environment:
+      PORT: 4000
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: incidentlens
+      PGPASSWORD: incidentlens
+      PGDATABASE: incidentlens
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  gateway:
+    build: ./services/gateway
+    environment:
+      PORT: 8080
+      ORDER_SERVICE_URL: http://order-service:4000
+    ports:
+      - "8080:8080"
+    depends_on:
+      - order-service
