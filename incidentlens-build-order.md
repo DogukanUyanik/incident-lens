@@ -96,8 +96,9 @@ If you stopped here, you have a complete, honest, working project: a real failur
 
 **Build:** `docker-compose.demo.yml` for one-command startup. README with: architecture diagram, benchmark results (real numbers from Phases 4–9), the honest scope note (scenarios were self-authored, plus whatever Phase 6 showed), and the RAG experiment's actual outcome.
 
-**Definition of Done:** someone else can clone the repo, run one command, and see the whole thing work.
+**Security hardening (do this before this phase counts as done):** the Phase 2 MCP server talks directly to `/var/run/docker.sock`, which is effectively root-equivalent access — "read-only" up to now has only been enforced by the server's own code (it simply chooses not to call destructive Docker API methods), not by anything structural. That was an acceptable, deliberate trade-off while everything ran locally, single-user, over stdio. It stops being acceptable once this is containerized or exposed beyond your own machine. Put a `docker-socket-proxy` (e.g. `tecnativa/docker-socket-proxy`, with only `CONTAINERS=1` enabled) between the MCP server and the socket, so read-only is enforced at the network/proxy level, not just by code convention. Verify it by confirming a destructive call (e.g. a container stop) genuinely fails through the proxy, not just that your own tools happen not to send one.
 
+**Definition of Done:** someone else can clone the repo, run one command, and see the whole thing work. The MCP server's Docker access goes through the socket proxy, not the raw socket, and this is verified, not assumed.
 ---
 
 ## What changed vs. the original phase order
