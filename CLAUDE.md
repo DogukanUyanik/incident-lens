@@ -11,7 +11,7 @@ with verified citations and a measured benchmark against a naive baseline.
 Full phase plan lives in `build-order.md`. Always check which phase is currently active
 before doing any work — do not implement later phases early, even if it seems convenient.
 
-**Current phase: Phase 1 — Docker sandbox + one real failure scenario.**
+**Current phase: Phase 4 Naive baseline + first benchmark.**
 
 ## Workflow Rules
 
