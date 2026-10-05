@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "scenarios": [
+    {
+      "id": "db-pool-exhaustion",
+      "title": "Database connection pool exhaustion",
+      "alert": "the gateway is returning 504 Gateway Timeout errors on GET /orders",
+      "ground_truth": "order-service leaks database connections: the /orders/leaky code path acquires a pg pool client and never releases it. After 10 such requests the pool (max 10) is exhausted, every later GET /orders waits forever for a client, and the gateway's 3s upstream timeout turns that into 504s. Postgres itself is healthy.",
+      "trigger": "./sandbox/chaos/scenario-db-exhaustion.sh",
+      "reset": "./sandbox/chaos/reset.sh",
+      "precondition": {
+        "description": "GET /orders through the gateway times out with a 504.",
+        "checks": [
+          { "type": "http", "method": "GET", "url": "http://localhost:8080/orders", "expect_status": 504, "timeout_ms": 8000 }
+        ]
+      },
+      "grading": {
+        "groups": [
+          { "name": "pool", "scope": "root_cause", "negatable": false, "patterns": ["connection|pool"] },
+          {
+            "name": "leak",
+            "scope": "root_cause",
+            "negatable": true,
+            "patterns": [
+              "\\bleak(s|ed|ing|age)?\\b",
+              "never releas",
+              "not releas",
+              "n't releas",
+              "without releas",
+              "fail\\w* to releas",
+              "missing \\w* ?release",
+              "never (returned|freed|given back|checked back)",
+              "not returned to the pool",
+              "held (indefinitely|forever)"
+            ]
+          },
+          { "name": "loc", "scope": "root_cause_or_summary", "negatable": false, "patterns": ["order[- ]service|orders\\/leaky"] }
+        ]
+      }
+    },
+    {
+      "id": "memory-leak-oom",
+      "title": "Memory leak with repeated OOM kills",
+      "alert": "the gateway is intermittently returning 502 Bad Gateway on /orders",
+      "ground_truth": "order-service leaks memory: its Idempotency-Key replay cache (src/idempotency.ts) keeps every request body and response in a module-level Map with no TTL or eviction. Under storefront's steady bulk-order traffic its memory grows until it reaches the 160 MiB container limit and the kernel OOM-kills it (exit 137); the on-failure restart policy restarts it, and the cycle repeats roughly every 90s. Requests during each restart fail with 502 at the gateway. Known evidence limit: Docker clears OOMKilled/ExitCode when the restart policy restarts the container, so the tools show the OOM only indirectly (restartCount climbing, uptime resetting, memory approaching memoryLimitMiB, repeated startup lines in the logs).",
+      "trigger": "./sandbox/chaos/scenario-memory-leak.sh",
+      "reset": "./sandbox/chaos/reset.sh",
+      "precondition": {
+        "description": "order-service runs with a memory limit, has been restarted at least twice by its restart policy, and storefront is running.",
+        "checks": [
+          { "type": "docker", "service": "order-service", "min_restart_count": 2, "memory_limit_set": true },
+          { "type": "docker", "service": "storefront", "running": true }
+        ]
+      },
+      "grading": {
+        "groups": [
+          { "name": "memory", "scope": "root_cause", "negatable": false, "patterns": ["memory|heap|\\brss\\b"] },
+          {
+            "name": "growth",
+            "scope": "root_cause",
+            "negatable": true,
+            "patterns": [
+              "\\bleak(s|ed|ing|age)?\\b",
+              "unbounded",
+              "without (bound|limit|eviction|ttl)",
+              "no (eviction|ttl|bound)",
+              "never (evicted|freed|cleared)",
+              "not (evicted|freed)",
+              "(grows?|growing|climb\\w*|increas\\w*) (steadily|continuously|without|until|unbounded)"
+            ]
+          },
+          { "name": "oom", "scope": "root_cause", "negatable": true, "patterns": ["\\boom\\b|oom[- ]?kill|out of memory|memory limit|\\b137\\b"] },
+          { "name": "loc", "scope": "root_cause_or_summary", "negatable": false, "patterns": ["order[- ]service"] }
+        ]
+      }
+    },
+    {
+      "id": "corrupt-deploy",
+      "title": "Corrupt deploy breaking payload parsing",
+      "alert": "the gateway is returning 500 Internal Server Error on POST /orders",
+      "ground_truth": "A recent order-service deploy broke order payload parsing. The newest commit in its deploy history, \"Refactor order payload parsing\" (minutes before the errors began), changed src/payload.ts to read each line's price as a Money object (price.amount, price.currency.toUpperCase()), while clients still send price as a number. Every POST /orders now throws TypeError: Cannot read properties of undefined (reading 'toUpperCase') in normalizeMoney/normalizeLine and returns 500 immediately. GET /orders and the database are unaffected.",
+      "trigger": "./sandbox/chaos/scenario-corrupt-deploy.sh",
+      "reset": "./sandbox/chaos/reset.sh",
+      "precondition": {
+        "description": "order-service is up (GET /health 200) and POST /orders through the gateway fails with an immediate 500.",
+        "checks": [
+          { "type": "http", "method": "GET", "url": "http://localhost:8080/health", "expect_status": 200, "timeout_ms": 4000 },
+          {
+            "type": "http",
+            "method": "POST",
+            "url": "http://localhost:8080/orders",
+            "body": { "customerId": "cust-1042", "currency": "EUR", "items": [{ "sku": "SKU-000123", "quantity": 2, "price": 19.99 }] },
+            "expect_status": 500,
+            "max_ms": 1000,
+            "timeout_ms": 4000
+          }
+        ]
+      },
+      "grading": {
+        "groups": [
+          {
+            "name": "change",
+            "scope": "root_cause",
+            "negatable": true,
+            "patterns": ["\\b(deploy\\w*|commit\\w*|refactor\\w*|regression|rollout|introduced|recent (change|release|version)|new (version|build|code))\\b"]
+          },
+          {
+            "name": "payload",
+            "scope": "root_cause",
+            "negatable": false,
+            "patterns": ["payload|pars(e|es|ed|ing|er)|request body|line items?|\\bitems?\\b|price|field|schema"]
+          },
+          { "name": "loc", "scope": "root_cause_or_summary", "negatable": false, "patterns": ["order[- ]service|payload\\.ts"] }
+        ]
+      }
+    }
+  ]
+}

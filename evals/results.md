@@ -1,35 +1,71 @@
 # IncidentLens benchmark — agent vs naive baseline
 
-- **Date:** 2026-10-05T17:05:12.480Z
+- **Generated:** 2026-10-05T22:11:37.470Z
 - **Model requested:** `claude-sonnet-5-5`; **served:** `claude-sonnet-5-5`
-- **Runs per approach (N):** 5
-- **Alert:** "the gateway is returning 504 Gateway Timeout errors on GET /orders"
-- **ONE scenario (db pool exhaustion / order-service connection leak); not a general result.**
-- Both approaches see the same 4000-char-per-call log window (the MCP server's cap). In the baseline's collections, the cap truncated the logs of: gateway, order-service, postgres. The baseline gets every container's logs (tail=1000) and stats in one prompt; the agent fetches what it chooses via tools.
-- Grading is a code-based keyword heuristic (`evals/grader.ts`): correct = mentions the pool/connections, a non-negated leak / never-released mechanism, and order-service. Check the root causes below by eye.
+- **3 self-authored scenarios** (written by the author of the agent); not a general result. Each scenario was run separately; its run date is in its section.
+- Both approaches reach the same sources through the same MCP tools (logs, stats, topology, deploy history), each capped at 4000 chars per call. The baseline gets all of it in one prompt (every container's logs at tail=1000 and stats, the topology, and every commit of every deploy history); the agent fetches what it chooses.
+- `memory-leak-oom`: Docker clears OOMKilled/ExitCode when the restart policy restarts a container, so the OOM is only inferable (restart count, uptime, memory vs limit, repeated startup lines), not shown directly.
+- `db-pool-exhaustion` uses the same grading criteria as Phase 4, but its inputs differ: both approaches now also see topology and deploy history, and the reset clears gateway/order-service logs (Phase 4 runs saw stale lines).
+- Grading is a code-based keyword heuristic per scenario (`evals/scenarios.json` → `grading`): correct iff every keyword group matches, with whole-word negation. Check the root causes below by eye.
 
-## Summary
+## Combined summary
+
+| Scenario | Approach | Accuracy | Mean tokens | Mean time | Citation validity | Failed | Mean turns |
+|---|---|---|---|---|---|---|---|
+| db-pool-exhaustion | — | not run | | | | | |
+| memory-leak-oom | agent | 1/2 | 46,960 (in 45,392 / out 1,568) | 22.9s | 100% (2/2 runs had a report) — by construction | 0/2 | 6.0 |
+| memory-leak-oom | baseline | 1/2 | 14,666 (in 13,964 / out 702) | 13.0s | 100% (2/2 runs had a report) | 0/2 | 1 call |
+| corrupt-deploy | agent | 2/2 | 19,518 (in 18,416 / out 1,102) | 15.5s | 100% (2/2 runs had a report) — by construction | 0/2 | 4.0 |
+| corrupt-deploy | baseline | 2/2 | 14,305 (in 13,657 / out 648) | 10.4s | 100% (2/2 runs had a report) | 0/2 | 1 call |
+| **all run scenarios** | agent | **3/4** | | | | | |
+| **all run scenarios** | baseline | **3/4** | | | | | |
+
+## Database connection pool exhaustion (`db-pool-exhaustion`)
+
+_Not run yet._
+
+## Memory leak with repeated OOM kills (`memory-leak-oom`)
+
+- **Run:** 2026-10-05T22:10:25.628Z → 2026-10-05T22:11:37.424Z, N=2, model `claude-sonnet-5-5`
+- **Alert:** "the gateway is intermittently returning 502 Bad Gateway on /orders"
+- **Ground truth:** order-service leaks memory: its Idempotency-Key replay cache (src/idempotency.ts) keeps every request body and response in a module-level Map with no TTL or eviction. Under storefront's steady bulk-order traffic its memory grows until it reaches the 160 MiB container limit and the kernel OOM-kills it (exit 137); the on-failure restart policy restarts it, and the cycle repeats roughly every 90s. Requests during each restart fail with 502 at the gateway. Known evidence limit: Docker clears OOMKilled/ExitCode when the restart policy restarts the container, so the tools show the OOM only indirectly (restartCount climbing, uptime resetting, memory approaching memoryLimitMiB, repeated startup lines in the logs).
+- **Log cap:** the 4000-char cap truncated the logs of: gateway, postgres (baseline collections).
 
 | Metric | Agent | Baseline |
 |---|---|---|
-| Accuracy | 5/5 | 5/5 |
-| Mean tokens (input + output) | 18,012 (in 16,944 / out 1,068) | 8,158 (in 7,706 / out 452) |
-| Mean wall-clock time | 13.1s | 9.2s |
-| Citation validity (mean) | 100% (5/5 runs had a report) — 100% by construction: the agent's verifier rejects unverified reports | 100% (5/5 runs had a report) |
-| Failed runs (no usable report) | 0/5 | 0/5 |
-| Mean turns | 3.0 | 1 call |
-
-## Per run
+| Accuracy | 1/2 | 1/2 |
+| Mean tokens (input + output) | 46,960 (in 45,392 / out 1,568) | 14,666 (in 13,964 / out 702) |
+| Mean wall-clock time | 22.9s | 13.0s |
+| Citation validity (mean) | 100% (2/2 runs had a report) — by construction | 100% (2/2 runs had a report) |
+| Failed runs (no usable report) | 0/2 | 0/2 |
+| Mean turns | 6.0 | 1 call |
 
 | Approach | Run | Verdict | Grader signals | Tokens | Time | Citations | Root cause / failure |
 |---|---|---|---|---|---|---|---|
-| agent | 1 | correct | pool✔ leak✔ loc✔ | 17,272 | 10.9s | 4/4 | A code path in order-service (the "orders/leaky" handler) acquires pg pool clients and never releases them. The pool's 10 clients were all held (idle=0) with 5 requests waiting. New /orders requests block on pool acquisition and the gateway times out after ~3s. Postgres is healthy and accepting connections, so the fault is a connection leak in order-service, not a database or gateway failure. |
-| baseline | 1 | correct | pool✔ leak✔ loc✔ | 8,166 | 9.3s | 4/4 | A connection leak in order-service's '/orders' handler (the 'orders/leaky' code path): it acquires pg pool clients and never releases them. The pool hit its max (total=10 idle=0) with waiting requests, so new /orders requests block until the gateway's 3s upstream timeout fires and returns 504. This is an application-level pool exhaustion problem, not a Postgres, gateway, or resource issue (no restarts, OOM, or CPU/memory pressure). |
-| agent | 2 | correct | pool✔ leak✔ loc✔ | 18,027 | 14.2s | 4/4 | A connection leak in order-service's orders code path (the "orders/leaky" handler). It acquires pg pool clients and deliberately never releases them. The pool reaches its max of 10 with idle=0 and waiting=5, so every later /orders request waits for a client that never frees up. The gateway's 3s proxy timeout then fires and returns a 504. Postgres is healthy (running normally since the 10-05 restart), and the gateway and order-service have not restarted or run out of resources, so the fault is in the application's pool handling. |
-| baseline | 2 | correct | pool✔ leak✔ loc✔ | 8,157 | 9.2s | 4/4 | A connection leak in order-service: the 'leaky' orders code path acquires pg pool clients and never releases them. The pool hits its max of 10 clients with 0 idle and requests waiting, so subsequent /orders queries block until the gateway's 3s upstream timeout fires. Postgres itself is healthy (running, accepting connections, low resource use), and the gateway and order-service have no restarts or OOMs, so the fault is the application's failure to release pooled clients. |
-| agent | 3 | correct | pool✔ leak✔ loc✔ | 17,911 | 12.8s | 4/4 | A connection leak in order-service's orders handler (the "orders/leaky" code path) acquires pg pool clients and never releases them. The pool hit its max of 10 (idle=0) with 5 requests waiting, so further /orders requests block waiting for a client. The gateway's 3s upstream timeout then fires and it returns 504. Postgres is up and accepting connections, so the fault is in the application's connection handling, not the database or the gateway. |
-| baseline | 3 | correct | pool✔ leak✔ loc✔ | 8,115 | 9.1s | 3/3 | A connection leak in order-service: the '/orders/leaky' code path acquires pg pool clients and never releases them ('will not release'). After a burst of requests the pool is saturated (total=10 idle=0 waiting=5), so subsequent /orders requests wait on the pool until the gateway's 3s upstream timeout fires. Postgres itself is healthy (running, no restarts or errors since startup), and the gateway is only reporting the timeout, so the fault is the unreleased pool clients in order-service. |
-| agent | 4 | correct | pool✔ leak✔ loc✔ | 18,715 | 13.6s | 4/4 | A connection leak in order-service: the "orders/leaky" code path acquires pg pool clients and never releases them. The pool (max 10) hit total=10 idle=0 with 5 requests waiting, so all later /orders requests block until the gateway's 3s upstream timeout fires. Postgres itself is healthy and accepting connections, and the containers are not resource constrained. |
-| baseline | 4 | correct | pool✔ leak✔ loc✔ | 8,161 | 9.2s | 4/4 | A connection leak in order-service: the 'leaky' orders code path acquires pg pool clients and never releases them ('will not release'). Once the 10-connection pool is fully held by leaked clients, every subsequent /orders request waits for a client that never frees up, and the gateway's 3s upstream timeout fires, producing 504s. Postgres itself is healthy (running, accepting connections, no restarts); the fault is client-side pool exhaustion in the order-service. |
-| agent | 5 | correct | pool✔ leak✔ loc✔ | 18,137 | 14.1s | 5/5 | A connection leak in order-service: the "orders/leaky" code path acquires pg pool clients and never releases them. At 17:01:30 the pool reached its maximum of 10 clients with 0 idle and 5 requests waiting. After that, GET /orders requests block waiting for a free client until the gateway gives up with 504 after about 3s. Before the leak (16:27:01) the same endpoint returned 200 in 55ms, with clients acquired and released normally. Postgres was running and accepting connections, and its earlier shutdown on 09-30 was a separate past event. |
-| baseline | 5 | correct | pool✔ leak✔ loc✔ | 8,192 | 9.3s | 4/4 | A connection leak in order-service: the 'orders/leaky' code path acquires pg pool clients and never releases them. The pool hit its max of 10 clients with 0 idle and 5 waiters, so subsequent /orders requests block until the gateway's ~3s upstream timeout fires. Postgres itself is healthy (running, accepting connections, no restarts or OOM), and the gateway is only a victim of the upstream stall. The earlier shutdown/FATAL 57P01 entries are from an unrelated, earlier planned Postgres shutdown on 2026-09-30. |
+| agent | 1 | wrong | memory✔ growth✔ oom✘ loc✔ | 33,617 | 20.0s | 5/5 | Commit f9824ea ("Support Idempotency-Key on order creation") added an in-process idempotency cache (`const responses = new Map<string, StoredResponse>()`) in order-service. It is never evicted, expired or size-bounded. Each stored entry holds the response body and also the full raw request buffer (`request: req.rawBody`, captured via express.json `verify`, up to 1mb per request). Memory grows without bound under steady POST /orders traffic until the container hits its 160 MiB limit and restarts (restartCount 2, repeated "listening on 4000" lines). The gateway returns 502 whenever the upstream order-service is down or restarting. |
+| baseline | 1 | wrong | memory✔ growth✔ oom✘ loc✔ | 14,474 | 12.5s | 6/6 | order-service has a memory leak that exhausts its 160 MiB limit and causes it to restart. The leak comes from the Idempotency-Key middleware added in commit f9824ea, which keeps every response in an unbounded in-memory Map with no eviction or TTL. For each key it also holds the full raw request body (`request: req.rawBody`). Memory grows with every order that carries an Idempotency-Key until the container hits its cap and is restarted. During each restart the gateway has no upstream to reach, so requests get 502. The storefront 502 bursts line up with the restarts at 22:08:08 and 22:09:45. |
+| agent | 2 | correct | memory✔ growth✔ oom✔ loc✔ | 60,302 | 25.8s | 6/6 | Commit f9824ea ("Support Idempotency-Key on order creation") added src/idempotency.ts, which stores every response in a module-level Map keyed by Idempotency-Key. The map is never evicted, has no TTL and no size cap. Each entry also keeps the full raw request body (`request: req.rawBody`), which the same commit began capturing via express.json's `verify` hook. Under sustained POST /orders traffic, heap usage grows without bound until the container reaches its 160 MiB memory limit and is restarted. While order-service is down or restarting, the gateway cannot reach it and returns 502 to clients. The 502s are therefore a symptom of order-service restarts. The underlying defect is the unbounded in-memory idempotency cache. |
+| baseline | 2 | correct | memory✔ growth✔ oom✔ neg×1 loc✔ | 14,858 | 13.5s | 7/7 | order-service is being crash-restarted roughly every 97 seconds. The container has a 160 MiB memory limit and sits at ~79 MiB (49%) just 2 seconds after the latest start, which suggests a memory leak or unbounded growth is driving it to the limit, though no OOM kill is recorded in the stats. The prime suspect is the idempotency middleware from commit f9824ea. It stores every response in a module-level Map (`responses`) that is never evicted. Each entry also retains the full raw request buffer (`rawBody`), and the keys are per-request Idempotency-Keys. Memory therefore grows with every order until the 160 MiB limit kills the process, which Docker then restarts. While the process is down or starting, the gateway's fetch to order-service fails and surfaces as 502. This causal chain is inferred from the code and the restart pattern, not directly confirmed by a crash log. |
+
+## Corrupt deploy breaking payload parsing (`corrupt-deploy`)
+
+- **Run:** 2026-10-05T22:03:16.321Z → 2026-10-05T22:04:08.145Z, N=2, model `claude-sonnet-5-5`
+- **Alert:** "the gateway is returning 500 Internal Server Error on POST /orders"
+- **Ground truth:** A recent order-service deploy broke order payload parsing. The newest commit in its deploy history, "Refactor order payload parsing" (minutes before the errors began), changed src/payload.ts to read each line's price as a Money object (price.amount, price.currency.toUpperCase()), while clients still send price as a number. Every POST /orders now throws TypeError: Cannot read properties of undefined (reading 'toUpperCase') in normalizeMoney/normalizeLine and returns 500 immediately. GET /orders and the database are unaffected.
+- **Log cap:** the 4000-char cap truncated the logs of: order-service, postgres (baseline collections).
+
+| Metric | Agent | Baseline |
+|---|---|---|
+| Accuracy | 2/2 | 2/2 |
+| Mean tokens (input + output) | 19,518 (in 18,416 / out 1,102) | 14,305 (in 13,657 / out 648) |
+| Mean wall-clock time | 15.5s | 10.4s |
+| Citation validity (mean) | 100% (2/2 runs had a report) — by construction | 100% (2/2 runs had a report) |
+| Failed runs (no usable report) | 0/2 | 0/2 |
+| Mean turns | 4.0 | 1 call |
+
+| Approach | Run | Verdict | Grader signals | Tokens | Time | Citations | Root cause / failure |
+|---|---|---|---|---|---|---|---|
+| agent | 1 | correct | change✔ payload✔ loc✔ | 19,536 | 17.8s | 5/5 | Commit 8897f05 "Refactor order payload parsing" (order-service, src/payload.ts) changed the expected shape of a line item's `price` from a plain number to a Money object `{amount, currency}`. The new `normalizeMoney` calls `price.currency.toUpperCase()` without validating the input. Clients still send the old payload format (numeric price, no currency), and the check for a numeric price was removed, so any such request reaches `normalizeMoney` with `currency` undefined and crashes with an unhandled TypeError. Express turns that into a 500, and the gateway returns the 500 to the caller. The refactor is a breaking API change with no backward compatibility and no validation of the currency field. It also dropped the order-level `currency` field that clients may send. Postgres and the gateway itself are healthy. |
+| baseline | 1 | correct | change✔ payload✔ loc✔ | 14,338 | 10.1s | 5/5 | Commit 8897f05 "Refactor order payload parsing" changed normalizeLine to expect price as a Money object ({amount, currency}) instead of a plain number, and added normalizeMoney, which calls price.currency.toUpperCase(). Existing clients (and the README contract) still send price as a number such as 9.99 with a top-level currency field. For such payloads price.currency is undefined, so toUpperCase() throws an unhandled TypeError (not a PayloadError), which surfaces as a 500. The refactor is a breaking, unvalidated API contract change with no backward compatibility and no input validation of the price shape. |
+| agent | 2 | correct | change✔ payload✔ loc✔ | 19,499 | 13.2s | 5/5 | Commit 8897f05 "Refactor order payload parsing" (src/payload.ts) changed the line `price` from a plain number to a Money object ({amount, currency}). The new normalizeMoney() calls price.currency.toUpperCase() without validating the shape. The old validation (price must be a non-negative number) was replaced by a check that only rejects undefined/null. Clients still send numeric prices (or prices with no currency), so price.currency is undefined and the code throws an unhandled TypeError. This surfaces as a 500 instead of a 400 validation error. The refactor was a breaking change to the request contract, and it also dropped the top-level `currency` field and its EUR default. |
+| baseline | 2 | correct | change✔ payload✔ loc✔ | 14,271 | 10.7s | 5/5 | Commit 8897f05 ('Refactor order payload parsing') changed normalizeLine to expect each line item's price to be a Money object ({amount, currency}) and call price.currency.toUpperCase(). Clients (and the README contract) still send price as a plain number, e.g. 9.99, so price.currency is undefined and the call throws a TypeError. The refactor also dropped the top-level currency field handling and has no validation or backward compatibility for the old payload shape. PayloadError is not raised for this case, so the failure surfaces as an unhandled 500 rather than a 400. Postgres and the gateway are healthy; this is a breaking change in order-service's request parsing. |

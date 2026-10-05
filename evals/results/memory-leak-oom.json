@@ -1,0 +1,515 @@
+{
+  "id": "memory-leak-oom",
+  "startedAt": "2026-10-05T22:10:25.628Z",
+  "finishedAt": "2026-10-05T22:11:37.424Z",
+  "model": "claude-sonnet-5-5",
+  "n": 2,
+  "runs": [
+    {
+      "approach": "agent",
+      "run": 1,
+      "ok": true,
+      "report": {
+        "summary": "The gateway intermittently returns 502 on /orders because order-service keeps running out of memory (160 MiB limit) and restarting, so requests in flight or arriving during a restart fail at the gateway.",
+        "root_cause": "Commit f9824ea (\"Support Idempotency-Key on order creation\") added an in-process idempotency cache (`const responses = new Map<string, StoredResponse>()`) in order-service. It is never evicted, expired or size-bounded. Each stored entry holds the response body and also the full raw request buffer (`request: req.rawBody`, captured via express.json `verify`, up to 1mb per request). Memory grows without bound under steady POST /orders traffic until the container hits its 160 MiB limit and restarts (restartCount 2, repeated \"listening on 4000\" lines). The gateway returns 502 whenever the upstream order-service is down or restarting.",
+        "evidence": [
+          {
+            "source": "get_container_logs {\"container\":\"order-service\",\"tail\":100}",
+            "verbatim_quote": "2026-10-05T22:09:45.473726182Z order-service listening on 4000"
+          },
+          {
+            "source": "get_container_stats {\"container\":\"order-service\"}",
+            "verbatim_quote": "\"restartCount\": 2"
+          },
+          {
+            "source": "get_container_stats {\"container\":\"order-service\"}",
+            "verbatim_quote": "\"memoryUsageMiB\": 119.68"
+          },
+          {
+            "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"f9824ea\"}",
+            "verbatim_quote": "+const responses = new Map<string, StoredResponse>();"
+          },
+          {
+            "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"f9824ea\"}",
+            "verbatim_quote": "+        request: req.rawBody,"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs {\"container\":\"order-service\",\"tail\":100}",
+          "quote": "2026-10-05T22:09:45.473726182Z order-service listening on 4000",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":100}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_stats {\"container\":\"order-service\"}",
+          "quote": "\"restartCount\": 2",
+          "ok": true,
+          "matchedIn": [
+            "get_container_stats {\"container\":\"order-service\"}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_stats {\"container\":\"order-service\"}",
+          "quote": "\"memoryUsageMiB\": 119.68",
+          "ok": true,
+          "matchedIn": [
+            "get_container_stats {\"container\":\"order-service\"}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"f9824ea\"}",
+          "quote": "+const responses = new Map<string, StoredResponse>();",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"f9824ea\"}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"f9824ea\"}",
+          "quote": "+        request: req.rawBody,",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"f9824ea\"}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": false,
+        "groups": [
+          {
+            "name": "memory",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "growth",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "oom",
+            "matched": false,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 32174,
+        "output_tokens": 1443
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 20.044471244,
+      "turns": 5
+    },
+    {
+      "approach": "baseline",
+      "run": 1,
+      "ok": true,
+      "report": {
+        "summary": "The gateway intermittently returns 502 on /orders because order-service keeps restarting (restartCount 2 in about 4 minutes) while sitting at ~80% of its 160 MiB memory limit. Each restart produces a burst of 502s at the gateway and storefront.",
+        "root_cause": "order-service has a memory leak that exhausts its 160 MiB limit and causes it to restart. The leak comes from the Idempotency-Key middleware added in commit f9824ea, which keeps every response in an unbounded in-memory Map with no eviction or TTL. For each key it also holds the full raw request body (`request: req.rawBody`). Memory grows with every order that carries an Idempotency-Key until the container hits its cap and is restarted. During each restart the gateway has no upstream to reach, so requests get 502. The storefront 502 bursts line up with the restarts at 22:08:08 and 22:09:45.",
+        "evidence": [
+          {
+            "source": "get_container_stats order-service",
+            "verbatim_quote": "\"memoryPercent\": 80.57,"
+          },
+          {
+            "source": "get_container_stats order-service",
+            "verbatim_quote": "\"restartCount\": 2,"
+          },
+          {
+            "source": "get_container_logs order-service",
+            "verbatim_quote": "2026-10-05T22:08:08.453129788Z order-service listening on 4000"
+          },
+          {
+            "source": "get_container_logs storefront",
+            "verbatim_quote": "2026-10-05T22:09:46.609872564Z [storefront] last 10s: submitted=100 deferred=0 responses ok=92 failed=7 (502×7)"
+          },
+          {
+            "source": "inspect_git_history order-service f9824ea",
+            "verbatim_quote": "+const responses = new Map<string, StoredResponse>();"
+          },
+          {
+            "source": "inspect_git_history order-service f9824ea",
+            "verbatim_quote": "+        request: req.rawBody,"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_stats order-service",
+          "quote": "\"memoryPercent\": 80.57,",
+          "ok": true,
+          "matchedIn": [
+            "get_container_stats {\"container\":\"order-service\"}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_stats order-service",
+          "quote": "\"restartCount\": 2,",
+          "ok": true,
+          "matchedIn": [
+            "get_container_stats {\"container\":\"order-service\"}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs order-service",
+          "quote": "2026-10-05T22:08:08.453129788Z order-service listening on 4000",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs storefront",
+          "quote": "2026-10-05T22:09:46.609872564Z [storefront] last 10s: submitted=100 deferred=0 responses ok=92 failed=7 (502×7)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"storefront\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history order-service f9824ea",
+          "quote": "+const responses = new Map<string, StoredResponse>();",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"f9824ea\"}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history order-service f9824ea",
+          "quote": "+        request: req.rawBody,",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"f9824ea\"}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": false,
+        "groups": [
+          {
+            "name": "memory",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "growth",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "oom",
+            "matched": false,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 13838,
+        "output_tokens": 636
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 12.515612571999998,
+      "truncated": [
+        "gateway",
+        "postgres"
+      ]
+    },
+    {
+      "approach": "agent",
+      "run": 2,
+      "ok": true,
+      "report": {
+        "summary": "The gateway intermittently returns 502 on /orders because order-service keeps running out of memory against its 160 MiB limit and restarting. Each restart drops connections while the service is down. The memory growth comes from the Idempotency-Key middleware added in commit f9824ea.",
+        "root_cause": "Commit f9824ea (\"Support Idempotency-Key on order creation\") added src/idempotency.ts, which stores every response in a module-level Map keyed by Idempotency-Key. The map is never evicted, has no TTL and no size cap. Each entry also keeps the full raw request body (`request: req.rawBody`), which the same commit began capturing via express.json's `verify` hook. Under sustained POST /orders traffic, heap usage grows without bound until the container reaches its 160 MiB memory limit and is restarted. While order-service is down or restarting, the gateway cannot reach it and returns 502 to clients. The 502s are therefore a symptom of order-service restarts. The underlying defect is the unbounded in-memory idempotency cache.",
+        "evidence": [
+          {
+            "source": "get_container_stats {\"container\":\"order-service\"}",
+            "verbatim_quote": "\"memoryPercent\": 98.43"
+          },
+          {
+            "source": "get_container_stats {\"container\":\"order-service\"}",
+            "verbatim_quote": "\"memoryLimitMiB\": 160"
+          },
+          {
+            "source": "get_container_logs {\"container\":\"order-service\"}",
+            "verbatim_quote": "2026-10-05T22:09:45.473726182Z order-service listening on 4000"
+          },
+          {
+            "source": "get_container_stats {\"container\":\"order-service\"}",
+            "verbatim_quote": "\"restartCount\": 2"
+          },
+          {
+            "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"f9824ea\"}",
+            "verbatim_quote": "+const responses = new Map<string, StoredResponse>();"
+          },
+          {
+            "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"f9824ea\"}",
+            "verbatim_quote": "+        request: req.rawBody,"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_stats {\"container\":\"order-service\"}",
+          "quote": "\"memoryPercent\": 98.43",
+          "ok": true,
+          "matchedIn": [
+            "get_container_stats {\"container\":\"order-service\"}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_stats {\"container\":\"order-service\"}",
+          "quote": "\"memoryLimitMiB\": 160",
+          "ok": true,
+          "matchedIn": [
+            "get_container_stats {\"container\":\"order-service\"}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs {\"container\":\"order-service\"}",
+          "quote": "2026-10-05T22:09:45.473726182Z order-service listening on 4000",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":100}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_stats {\"container\":\"order-service\"}",
+          "quote": "\"restartCount\": 2",
+          "ok": true,
+          "matchedIn": [
+            "get_container_stats {\"container\":\"order-service\"}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"f9824ea\"}",
+          "quote": "+const responses = new Map<string, StoredResponse>();",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"f9824ea\"}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"f9824ea\"}",
+          "quote": "+        request: req.rawBody,",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"f9824ea\"}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "memory",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "growth",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "oom",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 58610,
+        "output_tokens": 1692
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 25.755878731999996,
+      "turns": 7
+    },
+    {
+      "approach": "baseline",
+      "run": 2,
+      "ok": true,
+      "report": {
+        "summary": "The gateway intermittently returns 502 on POST /orders because the order-service keeps restarting (4 starts in ~5 minutes, restartCount=3), and requests that hit it while it is down fail with 'fetch failed'. The restarts line up with the 502 bursts seen by the storefront.",
+        "root_cause": "order-service is being crash-restarted roughly every 97 seconds. The container has a 160 MiB memory limit and sits at ~79 MiB (49%) just 2 seconds after the latest start, which suggests a memory leak or unbounded growth is driving it to the limit, though no OOM kill is recorded in the stats. The prime suspect is the idempotency middleware from commit f9824ea. It stores every response in a module-level Map (`responses`) that is never evicted. Each entry also retains the full raw request buffer (`rawBody`), and the keys are per-request Idempotency-Keys. Memory therefore grows with every order until the 160 MiB limit kills the process, which Docker then restarts. While the process is down or starting, the gateway's fetch to order-service fails and surfaces as 502. This causal chain is inferred from the code and the restart pattern, not directly confirmed by a crash log.",
+        "evidence": [
+          {
+            "source": "get_container_logs order-service",
+            "verbatim_quote": "2026-10-05T22:09:45.473726182Z order-service listening on 4000"
+          },
+          {
+            "source": "get_container_stats order-service",
+            "verbatim_quote": "\"restartCount\": 3,"
+          },
+          {
+            "source": "get_container_stats order-service",
+            "verbatim_quote": "\"memoryLimitMiB\": 160,"
+          },
+          {
+            "source": "get_container_logs gateway",
+            "verbatim_quote": "POST /orders -> 502 (17ms): TypeError: fetch failed"
+          },
+          {
+            "source": "inspect_git_history f9824ea",
+            "verbatim_quote": "+const responses = new Map<string, StoredResponse>();"
+          },
+          {
+            "source": "inspect_git_history f9824ea",
+            "verbatim_quote": "+        request: req.rawBody,"
+          },
+          {
+            "source": "get_container_logs storefront",
+            "verbatim_quote": "[storefront] last 10s: submitted=100 deferred=0 responses ok=92 failed=7 (502×7)"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs order-service",
+          "quote": "2026-10-05T22:09:45.473726182Z order-service listening on 4000",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_stats order-service",
+          "quote": "\"restartCount\": 3,",
+          "ok": true,
+          "matchedIn": [
+            "get_container_stats {\"container\":\"order-service\"}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_stats order-service",
+          "quote": "\"memoryLimitMiB\": 160,",
+          "ok": true,
+          "matchedIn": [
+            "get_container_stats {\"container\":\"order-service\"}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs gateway",
+          "quote": "POST /orders -> 502 (17ms): TypeError: fetch failed",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"gateway\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history f9824ea",
+          "quote": "+const responses = new Map<string, StoredResponse>();",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"f9824ea\"}"
+          ],
+          "sourceMismatch": true
+        },
+        {
+          "source": "inspect_git_history f9824ea",
+          "quote": "+        request: req.rawBody,",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"f9824ea\"}"
+          ],
+          "sourceMismatch": true
+        },
+        {
+          "source": "get_container_logs storefront",
+          "quote": "[storefront] last 10s: submitted=100 deferred=0 responses ok=92 failed=7 (502×7)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"storefront\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "memory",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "growth",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "oom",
+            "matched": true,
+            "negated": 1
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 14090,
+        "output_tokens": 768
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 13.474196216000005,
+      "truncated": [
+        "gateway",
+        "postgres"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+diff --git a/Dockerfile b/Dockerfile
+index e582471..fade9b9 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -1,4 +1,4 @@
+-FROM node:20
++FROM node:20-alpine
+ 
+ WORKDIR /app
+ 

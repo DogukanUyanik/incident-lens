@@ -1,0 +1,76 @@
+diff --git a/src/payload.ts b/src/payload.ts
+index abf4d97..50a8a07 100644
+--- a/src/payload.ts
++++ b/src/payload.ts
+@@ -1,9 +1,15 @@
+ export class PayloadError extends Error {}
+ 
++export interface Money {
++  amount: number;
++  currency: string;
++}
++
+ export interface OrderLine {
+   sku: string;
+   quantity: number;
+   unitPrice: number;
++  currency: string;
+   lineTotal: number;
+ }
+ 
+@@ -16,9 +22,13 @@ export interface Order {
+ 
+ const roundCents = (n: number) => Math.round(n * 100) / 100;
+ 
++function normalizeMoney(price: Money): Money {
++  return { amount: roundCents(price.amount), currency: price.currency.toUpperCase() };
++}
++
+ export function normalizeLine(raw: unknown, index: number): OrderLine {
+   if (!raw || typeof raw !== "object") throw new PayloadError(`items[${index}] must be an object`);
+-  const { sku, quantity, price } = raw as Record<string, unknown>;
++  const { sku, quantity, price } = raw as { sku?: unknown; quantity?: unknown; price?: Money };
+ 
+   if (typeof sku !== "string" || sku.length === 0) {
+     throw new PayloadError(`items[${index}].sku is required`);
+@@ -26,17 +36,26 @@ export function normalizeLine(raw: unknown, index: number): OrderLine {
+   if (typeof quantity !== "number" || !Number.isInteger(quantity) || quantity <= 0) {
+     throw new PayloadError(`items[${index}].quantity must be a positive integer`);
+   }
+-  if (typeof price !== "number" || price < 0) {
+-    throw new PayloadError(`items[${index}].price must be a non-negative number`);
++  if (price === undefined || price === null) {
++    throw new PayloadError(`items[${index}].price is required`);
+   }
+ 
+-  const unitPrice = roundCents(price);
+-  return { sku, quantity, unitPrice, lineTotal: roundCents(unitPrice * quantity) };
++  const unitPrice = normalizeMoney(price);
++  if (unitPrice.amount < 0) {
++    throw new PayloadError(`items[${index}].price must be non-negative`);
++  }
++  return {
++    sku,
++    quantity,
++    unitPrice: unitPrice.amount,
++    currency: unitPrice.currency,
++    lineTotal: roundCents(unitPrice.amount * quantity),
++  };
+ }
+ 
+ export function parseOrder(body: unknown): Order {
+   if (!body || typeof body !== "object") throw new PayloadError("request body must be a JSON object");
+-  const { customerId, currency, items } = body as Record<string, unknown>;
++  const { customerId, items } = body as Record<string, unknown>;
+ 
+   if (typeof customerId !== "string" || customerId.length === 0) {
+     throw new PayloadError("customerId is required");
+@@ -48,7 +67,7 @@ export function parseOrder(body: unknown): Order {
+   const lines = items.map(normalizeLine);
+   return {
+     customerId,
+-    currency: typeof currency === "string" ? currency.toUpperCase() : "EUR",
++    currency: lines[0].currency,
+     lines,
+     total: roundCents(lines.reduce((sum, l) => sum + l.lineTotal, 0)),
+   };

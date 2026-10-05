@@ -11,7 +11,7 @@ with verified citations and a measured benchmark against a naive baseline.
 Full phase plan lives in `build-order.md`. Always check which phase is currently active
 before doing any work — do not implement later phases early, even if it seems convenient.
 
-**Current phase: Phase 4 Naive baseline + first benchmark.**
+**Current phase: Phase 5**
 
 ## Workflow Rules
 

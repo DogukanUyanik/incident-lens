@@ -1,0 +1,12 @@
+services:
+  order-service:
+    mem_limit: 160m
+    memswap_limit: 160m
+    restart: on-failure
+
+  storefront:
+    build: ./services/storefront
+    environment:
+      GATEWAY_URL: http://gateway:8080
+    depends_on:
+      - gateway

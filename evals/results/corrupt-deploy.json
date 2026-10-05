@@ -1,0 +1,443 @@
+{
+  "id": "corrupt-deploy",
+  "startedAt": "2026-10-05T22:03:16.321Z",
+  "finishedAt": "2026-10-05T22:04:08.145Z",
+  "model": "claude-sonnet-5-5",
+  "n": 2,
+  "runs": [
+    {
+      "approach": "agent",
+      "run": 1,
+      "ok": true,
+      "report": {
+        "summary": "POST /orders through the gateway returns 500 because order-service throws a TypeError while parsing the order payload. The gateway is only passing the failure through.",
+        "root_cause": "Commit 8897f05 \"Refactor order payload parsing\" (order-service, src/payload.ts) changed the expected shape of a line item's `price` from a plain number to a Money object `{amount, currency}`. The new `normalizeMoney` calls `price.currency.toUpperCase()` without validating the input. Clients still send the old payload format (numeric price, no currency), and the check for a numeric price was removed, so any such request reaches `normalizeMoney` with `currency` undefined and crashes with an unhandled TypeError. Express turns that into a 500, and the gateway returns the 500 to the caller. The refactor is a breaking API change with no backward compatibility and no validation of the currency field. It also dropped the order-level `currency` field that clients may send. Postgres and the gateway itself are healthy.",
+        "evidence": [
+          {
+            "source": "get_container_logs {\"container\":\"order-service\",\"tail\":60}",
+            "verbatim_quote": "[orders] POST /orders failed: TypeError: Cannot read properties of undefined (reading 'toUpperCase')"
+          },
+          {
+            "source": "get_container_logs {\"container\":\"order-service\",\"tail\":60}",
+            "verbatim_quote": "at normalizeMoney (/app/src/payload.ts:26:71)"
+          },
+          {
+            "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"8897f05\"}",
+            "verbatim_quote": "+  return { amount: roundCents(price.amount), currency: price.currency.toUpperCase() };"
+          },
+          {
+            "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"8897f05\"}",
+            "verbatim_quote": "-  if (typeof price !== \"number\" || price < 0) {"
+          },
+          {
+            "source": "get_container_logs {\"container\":\"gateway\",\"tail\":50}",
+            "verbatim_quote": "[gateway] POST /orders -> 500 (13ms)"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs {\"container\":\"order-service\",\"tail\":60}",
+          "quote": "[orders] POST /orders failed: TypeError: Cannot read properties of undefined (reading 'toUpperCase')",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":60}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs {\"container\":\"order-service\",\"tail\":60}",
+          "quote": "at normalizeMoney (/app/src/payload.ts:26:71)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":60}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"8897f05\"}",
+          "quote": "+  return { amount: roundCents(price.amount), currency: price.currency.toUpperCase() };",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"8897f05\"}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"8897f05\"}",
+          "quote": "-  if (typeof price !== \"number\" || price < 0) {",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"8897f05\"}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs {\"container\":\"gateway\",\"tail\":50}",
+          "quote": "[gateway] POST /orders -> 500 (13ms)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"gateway\",\"tail\":50}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "change",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "payload",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 18416,
+        "output_tokens": 1120
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 17.806785546,
+      "turns": 4
+    },
+    {
+      "approach": "baseline",
+      "run": 1,
+      "ok": true,
+      "report": {
+        "summary": "POST /orders returns 500 through the gateway because order-service throws a TypeError while parsing the order payload. The failures started right after the latest order-service deploy, and gateway, order-service and postgres are otherwise healthy (no restarts, no OOM).",
+        "root_cause": "Commit 8897f05 \"Refactor order payload parsing\" changed normalizeLine to expect price as a Money object ({amount, currency}) instead of a plain number, and added normalizeMoney, which calls price.currency.toUpperCase(). Existing clients (and the README contract) still send price as a number such as 9.99 with a top-level currency field. For such payloads price.currency is undefined, so toUpperCase() throws an unhandled TypeError (not a PayloadError), which surfaces as a 500. The refactor is a breaking, unvalidated API contract change with no backward compatibility and no input validation of the price shape.",
+        "evidence": [
+          {
+            "source": "get_container_logs order-service",
+            "verbatim_quote": "[orders] POST /orders failed: TypeError: Cannot read properties of undefined (reading 'toUpperCase')"
+          },
+          {
+            "source": "get_container_logs order-service",
+            "verbatim_quote": "at normalizeMoney (/app/src/payload.ts:26:71)"
+          },
+          {
+            "source": "inspect_git_history order-service commit 8897f05",
+            "verbatim_quote": "return { amount: roundCents(price.amount), currency: price.currency.toUpperCase() };"
+          },
+          {
+            "source": "inspect_git_history order-service commit 8897f05",
+            "verbatim_quote": "-  if (typeof price !== \"number\" || price < 0) {"
+          },
+          {
+            "source": "inspect_git_history order-service commit ad69a7a",
+            "verbatim_quote": "`POST /orders`: create an order. Body: `{ \"customerId\": \"...\", \"currency\": \"EUR\", \"items\": [{ \"sku\": \"...\", \"quantity\": 1, \"price\": 9.99 }] }`."
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs order-service",
+          "quote": "[orders] POST /orders failed: TypeError: Cannot read properties of undefined (reading 'toUpperCase')",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs order-service",
+          "quote": "at normalizeMoney (/app/src/payload.ts:26:71)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history order-service commit 8897f05",
+          "quote": "return { amount: roundCents(price.amount), currency: price.currency.toUpperCase() };",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"8897f05\"}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history order-service commit 8897f05",
+          "quote": "-  if (typeof price !== \"number\" || price < 0) {",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"8897f05\"}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history order-service commit ad69a7a",
+          "quote": "`POST /orders`: create an order. Body: `{ \"customerId\": \"...\", \"currency\": \"EUR\", \"items\": [{ \"sku\": \"...\", \"quantity\": 1, \"price\": 9.99 }] }`.",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"ad69a7a\"}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "change",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "payload",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 13657,
+        "output_tokens": 681
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 10.052306206999997,
+      "truncated": [
+        "order-service",
+        "postgres"
+      ]
+    },
+    {
+      "approach": "agent",
+      "run": 2,
+      "ok": true,
+      "report": {
+        "summary": "POST /orders through the gateway returns 500 because order-service throws a TypeError while parsing order payloads. The gateway is only relaying the failure; the bug is in order-service.",
+        "root_cause": "Commit 8897f05 \"Refactor order payload parsing\" (src/payload.ts) changed the line `price` from a plain number to a Money object ({amount, currency}). The new normalizeMoney() calls price.currency.toUpperCase() without validating the shape. The old validation (price must be a non-negative number) was replaced by a check that only rejects undefined/null. Clients still send numeric prices (or prices with no currency), so price.currency is undefined and the code throws an unhandled TypeError. This surfaces as a 500 instead of a 400 validation error. The refactor was a breaking change to the request contract, and it also dropped the top-level `currency` field and its EUR default.",
+        "evidence": [
+          {
+            "source": "get_container_logs {\"container\":\"order-service\",\"tail\":100}",
+            "verbatim_quote": "[orders] POST /orders failed: TypeError: Cannot read properties of undefined (reading 'toUpperCase')"
+          },
+          {
+            "source": "get_container_logs {\"container\":\"order-service\",\"tail\":100}",
+            "verbatim_quote": "at normalizeMoney (/app/src/payload.ts:26:71)"
+          },
+          {
+            "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"8897f05\"}",
+            "verbatim_quote": "+  return { amount: roundCents(price.amount), currency: price.currency.toUpperCase() };"
+          },
+          {
+            "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"8897f05\"}",
+            "verbatim_quote": "-  if (typeof price !== \"number\" || price < 0) {"
+          },
+          {
+            "source": "get_container_logs {\"container\":\"gateway\"}",
+            "verbatim_quote": "[gateway] POST /orders -> 500 (13ms)"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs {\"container\":\"order-service\",\"tail\":100}",
+          "quote": "[orders] POST /orders failed: TypeError: Cannot read properties of undefined (reading 'toUpperCase')",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":100}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs {\"container\":\"order-service\",\"tail\":100}",
+          "quote": "at normalizeMoney (/app/src/payload.ts:26:71)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":100}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"8897f05\"}",
+          "quote": "+  return { amount: roundCents(price.amount), currency: price.currency.toUpperCase() };",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"8897f05\"}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"8897f05\"}",
+          "quote": "-  if (typeof price !== \"number\" || price < 0) {",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"8897f05\"}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs {\"container\":\"gateway\"}",
+          "quote": "[gateway] POST /orders -> 500 (13ms)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"gateway\",\"tail\":100}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "change",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "payload",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 18416,
+        "output_tokens": 1083
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 13.211262819999996,
+      "turns": 4
+    },
+    {
+      "approach": "baseline",
+      "run": 2,
+      "ok": true,
+      "report": {
+        "summary": "POST /orders returns 500 through the gateway because order-service throws a TypeError while parsing every order payload. GET endpoints and /health work; only order creation is broken.",
+        "root_cause": "Commit 8897f05 ('Refactor order payload parsing') changed normalizeLine to expect each line item's price to be a Money object ({amount, currency}) and call price.currency.toUpperCase(). Clients (and the README contract) still send price as a plain number, e.g. 9.99, so price.currency is undefined and the call throws a TypeError. The refactor also dropped the top-level currency field handling and has no validation or backward compatibility for the old payload shape. PayloadError is not raised for this case, so the failure surfaces as an unhandled 500 rather than a 400. Postgres and the gateway are healthy; this is a breaking change in order-service's request parsing.",
+        "evidence": [
+          {
+            "source": "get_container_logs order-service",
+            "verbatim_quote": "[orders] POST /orders failed: TypeError: Cannot read properties of undefined (reading 'toUpperCase')"
+          },
+          {
+            "source": "get_container_logs order-service",
+            "verbatim_quote": "at normalizeMoney (/app/src/payload.ts:26:71)"
+          },
+          {
+            "source": "inspect_git_history order-service commit 8897f05",
+            "verbatim_quote": "+  return { amount: roundCents(price.amount), currency: price.currency.toUpperCase() };"
+          },
+          {
+            "source": "inspect_git_history order-service commit ad69a7a",
+            "verbatim_quote": "\"items\": [{ \"sku\": \"...\", \"quantity\": 1, \"price\": 9.99 }]"
+          },
+          {
+            "source": "get_container_logs gateway",
+            "verbatim_quote": "[gateway] POST /orders -> 500 (13ms)"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs order-service",
+          "quote": "[orders] POST /orders failed: TypeError: Cannot read properties of undefined (reading 'toUpperCase')",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs order-service",
+          "quote": "at normalizeMoney (/app/src/payload.ts:26:71)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history order-service commit 8897f05",
+          "quote": "+  return { amount: roundCents(price.amount), currency: price.currency.toUpperCase() };",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"8897f05\"}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history order-service commit ad69a7a",
+          "quote": "\"items\": [{ \"sku\": \"...\", \"quantity\": 1, \"price\": 9.99 }]",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"ad69a7a\"}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs gateway",
+          "quote": "[gateway] POST /orders -> 500 (13ms)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"gateway\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "change",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "payload",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 13657,
+        "output_tokens": 614
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 10.749253881999998,
+      "truncated": [
+        "order-service",
+        "postgres"
+      ]
+    }
+  ]
+}

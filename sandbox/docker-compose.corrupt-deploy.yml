@@ -1,0 +1,4 @@
+services:
+  order-service:
+    build:
+      context: ./.deploy-history/order-service

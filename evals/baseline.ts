@@ -18,7 +18,7 @@ const LOG_TAIL = 1000; // the get_container_logs maximum; the MCP server's 4000-
 
 const SYSTEM_PROMPT = `You are an SRE investigating a live incident in a docker-compose sandbox.
 
-You are given an alert and telemetry (logs and resource stats) collected from every container in the sandbox. Find
+You are given an alert and telemetry (logs, resource stats, cluster topology and deploy history) collected from every container in the sandbox. Find
 the underlying root cause, not just the symptom that was reported.
 
 Respond with only a JSON object, no other text, in this shape:
@@ -73,20 +73,34 @@ export async function runBaseline(alert: string, telemetry: TelemetryClient): Pr
     return { ok: false, failure, usage, models, telemetryChars: 0, truncated: [] };
   }
 
-  // Collect through the Phase 2 MCP tools: the exact text the agent's tool calls return.
+  // Collect through the MCP tools: the exact text the agent's tool calls return.
   const sections: string[] = [];
   const truncated: string[] = [];
+  const collect = async (name: string, args: Record<string, unknown>, skipErrors = false) => {
+    const { text, isError } = await telemetry.callTool(name, args);
+    if (isError && skipErrors) return undefined;
+    verifier.record(name, args, text, isError);
+    sections.push(`=== ${callLabel(name, args)}${isError ? " [error]" : ""} ===\n${text}`);
+    return isError ? undefined : text;
+  };
+
   for (const container of containers) {
-    const calls: Array<[string, Record<string, unknown>]> = [
-      ["get_container_logs", { container, tail: LOG_TAIL }],
-      ["get_container_stats", { container }],
-    ];
-    for (const [name, args] of calls) {
-      const { text, isError } = await telemetry.callTool(name, args);
-      verifier.record(name, args, text, isError);
-      if (name === "get_container_logs" && text.startsWith("[TRUNCATED")) truncated.push(container);
-      sections.push(`=== ${callLabel(name, args)}${isError ? " [error]" : ""} ===\n${text}`);
-    }
+    const logs = await collect("get_container_logs", { container, tail: LOG_TAIL });
+    if (logs?.startsWith("[TRUNCATED")) truncated.push(container);
+    await collect("get_container_stats", { container });
+  }
+  await collect("get_cluster_topology", {});
+
+  // Deploy history: every service that has one (others return an error, which is skipped), and every commit in it.
+  for (const service of containers) {
+    const list = await collect("inspect_git_history", { service }, true);
+    if (!list) continue;
+    const hashes = list
+      .split("\n")
+      .slice(list.split("\n").indexOf("---") + 1)
+      .map((line) => line.split(" ")[0])
+      .filter((h) => /^[0-9a-f]{4,40}$/.test(h));
+    for (const commit of hashes) await collect("inspect_git_history", { service, commit });
   }
   const telemetryText = sections.join("\n\n");
 

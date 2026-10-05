@@ -15,16 +15,31 @@ export class ToolError extends Error {}
  * Resolve a compose service name ("order-service") or exact container name
  * ("sandbox-order-service-1") to a container in the sandbox compose project.
  */
-export async function resolveContainer(name: string): Promise<Docker.Container> {
-  let containers: Docker.ContainerInfo[];
+export async function listProjectContainers(): Promise<Docker.ContainerInfo[]> {
   try {
-    containers = await docker.listContainers({
+    return await docker.listContainers({
       all: true,
       filters: { label: [`${PROJECT_LABEL}=${COMPOSE_PROJECT}`] },
     });
   } catch (err) {
     throw new ToolError(`Could not reach the Docker daemon: ${String(err)}`);
   }
+}
+
+export function composeProject(): string {
+  return COMPOSE_PROJECT;
+}
+
+export function serviceOf(info: Docker.ContainerInfo): string {
+  return info.Labels[SERVICE_LABEL] ?? info.Names[0]?.replace(/^\//, "") ?? info.Id.slice(0, 12);
+}
+
+export async function inspectById(id: string) {
+  return docker.getContainer(id).inspect();
+}
+
+export async function resolveContainer(name: string): Promise<Docker.Container> {
+  const containers = await listProjectContainers();
 
   const match =
     containers.find((c) => c.Labels[SERVICE_LABEL] === name) ??
