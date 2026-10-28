@@ -27,44 +27,43 @@ before doing any work — do not implement later phases early, even if it seems 
 ## Commands
 
 ```bash
-# Start the sandbox
+# Sandbox
 cd sandbox && docker compose up --build
-
-# Stop and remove containers
 cd sandbox && docker compose down
+docker compose restart order-service      # reset after a chaos scenario
 
-# Reset a single service after a chaos scenario
-docker compose restart order-service
-
-# Run a chaos scenario
+# Chaos scenarios (see sandbox/chaos/)
 ./sandbox/chaos/scenario-db-exhaustion.sh
+# (add the memory-leak and corrupt-deploy script names here)
+
+# Benchmark and tests (from evals/)
+npm run bench -- --scenario <id> --runs <N>
+npm test
 ```
 
-## Tech Stack
-
-- Node.js (v20 LTS), TypeScript
-- Docker / Docker Compose
-- PostgreSQL (via the `pg` package, no ORM at this stage)
-- Claude API (tool use, MCP, extended thinking, prompt caching) — from Phase 3 onward
-
-## Architecture (Phase 1 scope only)
+## Architecture
 
 ```
-sandbox/
-  docker-compose.yml
-  services/
-    gateway/        — reverse proxy, 3s timeout to order-service
-    order-service/  — Express API, Postgres pool (max 10 connections)
-  chaos/
-    scenario-db-exhaustion.sh
+sandbox/            Docker Compose: gateway, order-service, postgres, storefront
+  chaos/            trigger/reset scripts per scenario
+  deploy-history/   generator + patches; output in .deploy-history/ (gitignored)
+packages/
+  mcp-server/       read-only telemetry tools (logs, stats, git history, topology)
+  agent/            tool loop, Zod report schema, citation verifier
+evals/              baseline, grader, scenarios.json, benchmark runner, results/
 ```
 
-`order-service` intentionally includes one buggy endpoint that acquires a database
-connection and never releases it back to the pool. This is the deliberate bug the chaos
-script exploits — it is not a mistake to "fix" unless a later phase explicitly says so.
+The sandbox bugs are deliberate: the pool leak (`/orders/leaky`), the idempotency
+cache without eviction, and the break patch in `deploy-history/patches/break/`.
+Do not "fix" them.
 
-## Definition of Done — Phase 1
+## Protected — do not modify
 
-`docker compose up`, run the chaos script, then request the gateway's healthy endpoint
-and see a real `504 Gateway Timeout`. The failure must be reproducible on demand and
-resettable with `docker compose restart order-service`.
+- Scenarios 1–3 and their grading criteria in `evals/scenarios.json`
+- Existing tests in `evals/grader.test.ts` (adding tests is fine, weakening is not)
+- `packages/mcp-server/src/docker.ts` (read-only guarantee; only list/inspect/logs/stats)
+- Never commit `.env` files or `sandbox/.deploy-history/`
+
+## Definition of Done — Phase 6
+
+(Copy from build-order.md Phase 6.)

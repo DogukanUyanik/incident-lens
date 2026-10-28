@@ -1,0 +1,880 @@
+{
+  "id": "db-pool-exhaustion",
+  "startedAt": "2026-10-28T00:32:19.206Z",
+  "finishedAt": "2026-10-28T00:35:57.847Z",
+  "model": "claude-sonnet-5-5",
+  "n": 5,
+  "runs": [
+    {
+      "approach": "agent",
+      "run": 1,
+      "ok": true,
+      "report": {
+        "summary": "The gateway returns 504 on GET /orders because order-service's Postgres connection pool (max 10) is exhausted. The `/orders/leaky` endpoint checks out a client on every call and never releases it, so `/orders` requests queue for a connection and hit the gateway's 3s timeout.",
+        "root_cause": "The `GET /orders/leaky` handler in order-service (src/index.ts, present since the initial commit bbac411) calls `pool.connect()` and never calls `client.release()`. Each hit permanently leaks one of the 10 pooled connections. After about 10 calls the pool is saturated (total=10 idle=0 waiting=5), and `GET /orders` blocks on `pool.connect()` until the gateway's 3s timeout produces a 504. Postgres is healthy and the order-service container is not resource-constrained, so the fault is the connection leak in the application code.",
+        "evidence": [
+          {
+            "source": "get_container_logs {\"container\":\"gateway\"}",
+            "verbatim_quote": "[gateway] GET /orders -> 504 (timed out after 3004ms)"
+          },
+          {
+            "source": "get_container_logs {\"container\":\"order-service\"}",
+            "verbatim_quote": "[orders/leaky] acquired client, will not release (total=10 idle=0 waiting=5)"
+          },
+          {
+            "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"bbac411\",\"path\":\"src/index.ts\"}",
+            "verbatim_quote": "+  await client.query(\"SELECT 1\");\n+  res.json({ ok: true, leaked: true });"
+          },
+          {
+            "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"bbac411\",\"path\":\"src/index.ts\"}",
+            "verbatim_quote": "+  database: process.env.PGDATABASE ?? \"incidentlens\",\n+  max: 10,"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs {\"container\":\"gateway\"}",
+          "quote": "[gateway] GET /orders -> 504 (timed out after 3004ms)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"gateway\",\"tail\":50}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs {\"container\":\"order-service\"}",
+          "quote": "[orders/leaky] acquired client, will not release (total=10 idle=0 waiting=5)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":50}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"bbac411\",\"path\":\"src/index.ts\"}",
+          "quote": "+  await client.query(\"SELECT 1\");\n+  res.json({ ok: true, leaked: true });",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"bbac411\",\"path\":\"src/index.ts\"}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"bbac411\",\"path\":\"src/index.ts\"}",
+          "quote": "+  database: process.env.PGDATABASE ?? \"incidentlens\",\n+  max: 10,",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"bbac411\",\"path\":\"src/index.ts\"}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "pool",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "leak",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 50598,
+        "output_tokens": 2334
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 27.765982316000002,
+      "turns": 7
+    },
+    {
+      "approach": "baseline",
+      "run": 1,
+      "ok": true,
+      "report": {
+        "summary": "GET /orders through the gateway intermittently returns 504 after 3s because order-service cannot obtain a database connection. Its Postgres pool (max 10) is fully exhausted by leaked clients, so requests queue indefinitely.",
+        "root_cause": "order-service has a connection leak in its /orders/leaky code path: it calls pool.connect() and never releases the client. After ~10 calls the pool is exhausted (total=10 idle=0 waiting=5), so every subsequent GET /orders waits on pool.connect() until the gateway's 3s timeout fires. Postgres itself is healthy; the starvation is entirely in the application's connection handling.",
+        "evidence": [
+          {
+            "source": "get_container_logs order-service",
+            "verbatim_quote": "[orders/leaky] acquired client, will not release (total=10 idle=0 waiting=5)"
+          },
+          {
+            "source": "get_container_logs gateway",
+            "verbatim_quote": "[gateway] GET /orders -> 504 (timed out after 3004ms)"
+          },
+          {
+            "source": "get_container_logs order-service",
+            "verbatim_quote": "[orders] released client (total=1 idle=1 waiting=0)"
+          },
+          {
+            "source": "inspect_git_history order-service commit a95613d",
+            "verbatim_quote": "app.get(\"/orders/leaky\", async (_req, res) => {"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs order-service",
+          "quote": "[orders/leaky] acquired client, will not release (total=10 idle=0 waiting=5)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs gateway",
+          "quote": "[gateway] GET /orders -> 504 (timed out after 3004ms)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"gateway\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs order-service",
+          "quote": "[orders] released client (total=1 idle=1 waiting=0)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history order-service commit a95613d",
+          "quote": "app.get(\"/orders/leaky\", async (_req, res) => {",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"a95613d\"}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "pool",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "leak",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 10260,
+        "output_tokens": 454
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 9.010640760000003,
+      "truncated": [
+        "postgres"
+      ]
+    },
+    {
+      "approach": "agent",
+      "run": 2,
+      "ok": false,
+      "failure": "stopped with stop_reason=max_tokens",
+      "usage": {
+        "input_tokens": 37330,
+        "output_tokens": 16742
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 81.11605510799998,
+      "turns": 6
+    },
+    {
+      "approach": "baseline",
+      "run": 2,
+      "ok": true,
+      "report": {
+        "summary": "GET /orders through the gateway intermittently returns 504 after ~3s because order-service's Postgres connection pool is exhausted: all 10 clients are checked out and never released, so new requests wait indefinitely for a connection.",
+        "root_cause": "A leaky handler in order-service (GET /orders/leaky) acquires a pg pool client and never releases it. Once its requests ran, the pool hit its max of 10 connections with idle=0 and waiting=5, so every subsequent /orders request blocks in pool.connect() until the gateway's 3s timeout fires. Postgres itself is healthy; the problem is connection leakage in application code, not the database or gateway.",
+        "evidence": [
+          {
+            "source": "get_container_logs order-service",
+            "verbatim_quote": "[orders/leaky] acquired client, will not release (total=10 idle=0 waiting=5)"
+          },
+          {
+            "source": "get_container_logs gateway",
+            "verbatim_quote": "[gateway] GET /orders -> 504 (timed out after 3004ms)"
+          },
+          {
+            "source": "get_container_logs order-service",
+            "verbatim_quote": "[orders] released client (total=1 idle=1 waiting=0)"
+          },
+          {
+            "source": "inspect_git_history order-service commit a95613d",
+            "verbatim_quote": "app.get(\"/orders/leaky\", async (_req, res) => {"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs order-service",
+          "quote": "[orders/leaky] acquired client, will not release (total=10 idle=0 waiting=5)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs gateway",
+          "quote": "[gateway] GET /orders -> 504 (timed out after 3004ms)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"gateway\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs order-service",
+          "quote": "[orders] released client (total=1 idle=1 waiting=0)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history order-service commit a95613d",
+          "quote": "app.get(\"/orders/leaky\", async (_req, res) => {",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"a95613d\"}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "pool",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "leak",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 10260,
+        "output_tokens": 457
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 9.097451196000009,
+      "truncated": [
+        "postgres"
+      ]
+    },
+    {
+      "approach": "agent",
+      "run": 3,
+      "ok": true,
+      "report": {
+        "summary": "GET /orders through the gateway returns 504 after 3s because order-service has run out of Postgres connections. Its pool (max 10) is fully exhausted by connections that /orders/leaky never releases.",
+        "root_cause": "The /orders/leaky handler in order-service (present since the initial commit bbac411) calls pool.connect() and never calls client.release(). Each hit permanently leaks one connection from the pg Pool (max: 10). After about 10 calls the pool is exhausted (total=10 idle=0 waiting=5). Every later pool.connect(), including the one in GET /orders, queues forever. The gateway then times out at 3s and returns 504. Postgres is healthy and order-service CPU/memory are normal, so this is application-level connection pool exhaustion caused by a connection leak, not a database or infrastructure failure.",
+        "evidence": [
+          {
+            "source": "get_container_logs {\"container\":\"order-service\",\"tail\":100}",
+            "verbatim_quote": "[orders/leaky] acquired client, will not release (total=10 idle=0 waiting=5)"
+          },
+          {
+            "source": "get_container_logs {\"container\":\"gateway\",\"tail\":50}",
+            "verbatim_quote": "[gateway] GET /orders -> 504 (timed out after 3004ms)"
+          },
+          {
+            "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"bbac411\",\"path\":\"src/index.ts\"}",
+            "verbatim_quote": "+  await client.query(\"SELECT 1\");\n+  res.json({ ok: true, leaked: true });"
+          },
+          {
+            "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"bbac411\",\"path\":\"src/index.ts\"}",
+            "verbatim_quote": "+  database: process.env.PGDATABASE ?? \"incidentlens\",\n+  max: 10,"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs {\"container\":\"order-service\",\"tail\":100}",
+          "quote": "[orders/leaky] acquired client, will not release (total=10 idle=0 waiting=5)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":100}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs {\"container\":\"gateway\",\"tail\":50}",
+          "quote": "[gateway] GET /orders -> 504 (timed out after 3004ms)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"gateway\",\"tail\":50}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"bbac411\",\"path\":\"src/index.ts\"}",
+          "quote": "+  await client.query(\"SELECT 1\");\n+  res.json({ ok: true, leaked: true });",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"bbac411\",\"path\":\"src/index.ts\"}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"bbac411\",\"path\":\"src/index.ts\"}",
+          "quote": "+  database: process.env.PGDATABASE ?? \"incidentlens\",\n+  max: 10,",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"bbac411\",\"path\":\"src/index.ts\"}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "pool",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "leak",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 48192,
+        "output_tokens": 2178
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 22.032816790000012,
+      "turns": 7
+    },
+    {
+      "approach": "baseline",
+      "run": 3,
+      "ok": true,
+      "report": {
+        "summary": "GET /orders through the gateway intermittently returns 504 after ~3s timeouts. The order-service's Postgres connection pool is exhausted (10/10 clients held, 5 waiting), so requests queue forever and the gateway times out.",
+        "root_cause": "The order-service has a leaky code path (the /orders/leaky handler) that acquires pg pool clients and never releases them. Once all 10 pooled connections are leaked, every subsequent request, including GET /orders, blocks waiting for a client and never completes. Postgres itself is healthy and CPU/memory are normal; the fault is a connection leak in the order-service.",
+        "evidence": [
+          {
+            "source": "get_container_logs order-service",
+            "verbatim_quote": "[orders/leaky] acquired client, will not release (total=10 idle=0 waiting=5)"
+          },
+          {
+            "source": "get_container_logs gateway",
+            "verbatim_quote": "[gateway] GET /orders -> 504 (timed out after 3004ms)"
+          },
+          {
+            "source": "get_container_logs order-service",
+            "verbatim_quote": "[orders] released client (total=1 idle=1 waiting=0)"
+          },
+          {
+            "source": "get_container_logs postgres",
+            "verbatim_quote": "database system is ready to accept connections"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs order-service",
+          "quote": "[orders/leaky] acquired client, will not release (total=10 idle=0 waiting=5)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs gateway",
+          "quote": "[gateway] GET /orders -> 504 (timed out after 3004ms)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"gateway\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs order-service",
+          "quote": "[orders] released client (total=1 idle=1 waiting=0)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs postgres",
+          "quote": "database system is ready to accept connections",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"postgres\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "pool",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "leak",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 10260,
+        "output_tokens": 423
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 9.19913998800001,
+      "truncated": [
+        "postgres"
+      ]
+    },
+    {
+      "approach": "agent",
+      "run": 4,
+      "ok": true,
+      "report": {
+        "summary": "Gateway GET /orders returns 504 after ~3s because order-service's Postgres connection pool (max 10) is fully exhausted. The /orders/leaky endpoint checks out clients and never releases them, so legitimate /orders requests wait forever for a connection.",
+        "root_cause": "The order-service `GET /orders/leaky` handler (present since the initial commit bbac411) calls `pool.connect()` and never calls `client.release()`. Each hit permanently leaks one of the 10 pooled Postgres connections. Once the pool hit total=10 idle=0 with waiters queued, the normal `GET /orders` handler (which needs `pool.connect()`) blocks indefinitely, and the gateway times out after 3s with a 504. Postgres itself is healthy, and the order-service container is not resource-constrained or crashing. The problem is a connection leak in the application code.",
+        "evidence": [
+          {
+            "source": "get_container_logs {\"container\":\"gateway\"}",
+            "verbatim_quote": "[gateway] GET /orders -> 504 (timed out after 3004ms)"
+          },
+          {
+            "source": "get_container_logs {\"container\":\"order-service\"}",
+            "verbatim_quote": "[orders/leaky] acquired client, will not release (total=10 idle=0 waiting=5)"
+          },
+          {
+            "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"bbac411\",\"path\":\"src/index.ts\"}",
+            "verbatim_quote": "+app.get(\"/orders/leaky\", async (_req, res) => {"
+          },
+          {
+            "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"bbac411\",\"path\":\"src/index.ts\"}",
+            "verbatim_quote": "+  res.json({ ok: true, leaked: true });"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs {\"container\":\"gateway\"}",
+          "quote": "[gateway] GET /orders -> 504 (timed out after 3004ms)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"gateway\",\"tail\":50}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs {\"container\":\"order-service\"}",
+          "quote": "[orders/leaky] acquired client, will not release (total=10 idle=0 waiting=5)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":50}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"bbac411\",\"path\":\"src/index.ts\"}",
+          "quote": "+app.get(\"/orders/leaky\", async (_req, res) => {",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"bbac411\",\"path\":\"src/index.ts\"}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"bbac411\",\"path\":\"src/index.ts\"}",
+          "quote": "+  res.json({ ok: true, leaked: true });",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"bbac411\",\"path\":\"src/index.ts\"}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "pool",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "leak",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 39972,
+        "output_tokens": 2159
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 20.755339066999994,
+      "turns": 6
+    },
+    {
+      "approach": "baseline",
+      "run": 4,
+      "ok": true,
+      "report": {
+        "summary": "GET /orders through the gateway intermittently returns 504 after a 3s timeout because order-service cannot obtain a Postgres connection from its pool. The pool is fully exhausted by connections that are acquired and never released.",
+        "root_cause": "order-service has a leaky code path (GET /orders/leaky) that acquires a pg pool client and never releases it. Once 10 clients are checked out (the pool max), the pool has total=10, idle=0 and waiting=5, so every subsequent GET /orders blocks in pool.connect() until the gateway times out at ~3s. Postgres itself is healthy and idle, and no recent deploy caused this.",
+        "evidence": [
+          {
+            "source": "get_container_logs order-service",
+            "verbatim_quote": "[orders/leaky] acquired client, will not release (total=10 idle=0 waiting=5)"
+          },
+          {
+            "source": "get_container_logs gateway",
+            "verbatim_quote": "[gateway] GET /orders -> 504 (timed out after 3004ms)"
+          },
+          {
+            "source": "get_container_logs order-service",
+            "verbatim_quote": "[orders] released client (total=1 idle=1 waiting=0)"
+          },
+          {
+            "source": "inspect_git_history order-service commit a95613d",
+            "verbatim_quote": "app.get(\"/orders/leaky\", async (_req, res) => {"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs order-service",
+          "quote": "[orders/leaky] acquired client, will not release (total=10 idle=0 waiting=5)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs gateway",
+          "quote": "[gateway] GET /orders -> 504 (timed out after 3004ms)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"gateway\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs order-service",
+          "quote": "[orders] released client (total=1 idle=1 waiting=0)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history order-service commit a95613d",
+          "quote": "app.get(\"/orders/leaky\", async (_req, res) => {",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"a95613d\"}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "pool",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "leak",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 10260,
+        "output_tokens": 451
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 9.042439261000021,
+      "truncated": [
+        "postgres"
+      ]
+    },
+    {
+      "approach": "agent",
+      "run": 5,
+      "ok": true,
+      "report": {
+        "summary": "The gateway returns 504 on GET /orders because order-service's Postgres connection pool (max 10) is fully exhausted. Requests to the `/orders/leaky` endpoint check out connections and never release them, so GET /orders waits forever for a client until the gateway's 3s timeout.",
+        "root_cause": "The `/orders/leaky` handler in order-service (src/index.ts, present since the initial commit bbac411) calls `pool.connect()` and never calls `client.release()`. Each call permanently leaks one pooled connection. After about 10 calls, the pool of max=10 is at total=10 idle=0 with waiting clients. GET /orders also needs `pool.connect()`, so it blocks indefinitely, and the gateway times out after ~3s with a 504. Postgres is healthy; the problem is pool starvation inside order-service, not the database or the gateway.",
+        "evidence": [
+          {
+            "source": "get_container_logs {\"container\":\"gateway\"}",
+            "verbatim_quote": "[gateway] GET /orders -> 504 (timed out after 3004ms)"
+          },
+          {
+            "source": "get_container_logs {\"container\":\"order-service\"}",
+            "verbatim_quote": "[orders/leaky] acquired client, will not release (total=10 idle=0 waiting=5)"
+          },
+          {
+            "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"bbac411\",\"path\":\"src/index.ts\"}",
+            "verbatim_quote": "+  await client.query(\"SELECT 1\");\n+  res.json({ ok: true, leaked: true });"
+          },
+          {
+            "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"bbac411\",\"path\":\"src/index.ts\"}",
+            "verbatim_quote": "+  database: process.env.PGDATABASE ?? \"incidentlens\",\n+  max: 10,"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs {\"container\":\"gateway\"}",
+          "quote": "[gateway] GET /orders -> 504 (timed out after 3004ms)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"gateway\",\"tail\":50}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs {\"container\":\"order-service\"}",
+          "quote": "[orders/leaky] acquired client, will not release (total=10 idle=0 waiting=5)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":50}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"bbac411\",\"path\":\"src/index.ts\"}",
+          "quote": "+  await client.query(\"SELECT 1\");\n+  res.json({ ok: true, leaked: true });",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"bbac411\",\"path\":\"src/index.ts\"}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history {\"service\":\"order-service\",\"commit\":\"bbac411\",\"path\":\"src/index.ts\"}",
+          "quote": "+  database: process.env.PGDATABASE ?? \"incidentlens\",\n+  max: 10,",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"bbac411\",\"path\":\"src/index.ts\"}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "pool",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "leak",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 48182,
+        "output_tokens": 2168
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 20.888443201000015,
+      "turns": 7
+    },
+    {
+      "approach": "baseline",
+      "run": 5,
+      "ok": true,
+      "report": {
+        "summary": "GET /orders through the gateway intermittently returns 504 after 3s because order-service's Postgres connection pool is exhausted (10/10 clients checked out, 5 requests waiting), so new /orders requests hang until the gateway times out.",
+        "root_cause": "A connection leak in order-service: the `/orders/leaky` handler acquires pg pool clients and never releases them ('will not release'). Once the pool's 10 connections are all held, the pool is exhausted and the waiting queue grows, so the normal GET /orders handler blocks on pool.connect() and the gateway's ~3s timeout fires. Postgres itself is healthy and the gateway has no resource problems; the fault is the unreleased clients in order-service.",
+        "evidence": [
+          {
+            "source": "get_container_logs order-service",
+            "verbatim_quote": "[orders/leaky] acquired client, will not release (total=10 idle=0 waiting=5)"
+          },
+          {
+            "source": "get_container_logs gateway",
+            "verbatim_quote": "[gateway] GET /orders -> 504 (timed out after 3004ms)"
+          },
+          {
+            "source": "get_container_logs order-service",
+            "verbatim_quote": "[orders] released client (total=1 idle=1 waiting=0)"
+          },
+          {
+            "source": "inspect_git_history order-service commit a95613d",
+            "verbatim_quote": "app.get(\"/orders/leaky\", async (_req, res) => {"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs order-service",
+          "quote": "[orders/leaky] acquired client, will not release (total=10 idle=0 waiting=5)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs gateway",
+          "quote": "[gateway] GET /orders -> 504 (timed out after 3004ms)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"gateway\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs order-service",
+          "quote": "[orders] released client (total=1 idle=1 waiting=0)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"order-service\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "inspect_git_history order-service commit a95613d",
+          "quote": "app.get(\"/orders/leaky\", async (_req, res) => {",
+          "ok": true,
+          "matchedIn": [
+            "inspect_git_history {\"service\":\"order-service\",\"commit\":\"a95613d\"}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "pool",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "leak",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 10258,
+        "output_tokens": 476
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 9.728629041000007,
+      "truncated": [
+        "postgres"
+      ]
+    }
+  ]
+}
