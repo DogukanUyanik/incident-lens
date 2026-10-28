@@ -69,7 +69,12 @@
               "(grows?|growing|climb\\w*|increas\\w*) (steadily|continuously|without|until|unbounded)"
             ]
           },
-          { "name": "oom", "scope": "root_cause", "negatable": true, "patterns": ["\\boom\\b|oom[- ]?kill|out of memory|memory limit|\\b137\\b"] },
+          { "name": "oom", "scope": "root_cause", "negatable": true, "patterns": [
+              "\\boom\\b|oom[- ]?kill|out of memory|memory limit|\\b137\\b",
+              "\\d+ ?mi?b\\b[^.]{0,20}limit",
+              "(hits?|reach\\w*|exceed\\w*|exhaust\\w*) (its |the )?(\\d+ ?mi?b |memory )?(limit|cap)"
+            ]
+          },
           { "name": "loc", "scope": "root_cause_or_summary", "negatable": false, "patterns": ["order[- ]service"] }
         ]
       }

@@ -241,7 +241,8 @@ function render(results: Map<string, ScenarioResult>): string {
   );
   lines.push(
     "- `memory-leak-oom`: Docker clears OOMKilled/ExitCode when the restart policy restarts a container, so the OOM " +
-      "is only inferable (restart count, uptime, memory vs limit, repeated startup lines), not shown directly."
+      "is only inferable (restart count, uptime, memory vs limit, repeated startup lines), not shown directly. " +
+      "oom group widened after run 1, applied equally to agent and baseline."
   );
   lines.push(
     "- `db-pool-exhaustion` uses the same grading criteria as Phase 4, but its inputs differ: both approaches now also " +

@@ -169,6 +169,34 @@ test("memory-leak-oom grader classifies the hand-written examples", () => {
       root_cause: "order-service memory piles up per request until it gets OOM-killed.",
       expected: false,
     },
+    {
+      name: "real run-1 agent root_cause ('160 MiB limit')",
+      root_cause:
+        "Commit f9824ea (\"Support Idempotency-Key on order creation\") added an in-process idempotency cache " +
+        "(`const responses = new Map<string, StoredResponse>()`) in order-service. It is never evicted, expired or " +
+        "size-bounded. Each stored entry holds the response body and also the full raw request buffer (`request: " +
+        "req.rawBody`, captured via express.json `verify`, up to 1mb per request). Memory grows without bound under " +
+        "steady POST /orders traffic until the container hits its 160 MiB limit and restarts (restartCount 2, " +
+        "repeated \"listening on 4000\" lines). The gateway returns 502 whenever the upstream order-service is down " +
+        "or restarting.",
+      expected: true,
+    },
+    {
+      name: "real run-1 baseline root_cause ('exhausts its 160 MiB limit')",
+      root_cause:
+        "order-service has a memory leak that exhausts its 160 MiB limit and causes it to restart. The leak comes " +
+        "from the Idempotency-Key middleware added in commit f9824ea, which keeps every response in an unbounded " +
+        "in-memory Map with no eviction or TTL. For each key it also holds the full raw request body (`request: " +
+        "req.rawBody`). Memory grows with every order that carries an Idempotency-Key until the container hits its " +
+        "cap and is restarted. During each restart the gateway has no upstream to reach, so requests get 502. The " +
+        "storefront 502 bursts line up with the restarts at 22:08:08 and 22:09:45.",
+      expected: true,
+    },
+    {
+      name: "leak + restarts, no limit/OOM wording",
+      root_cause: "order-service has a memory leak; it restarts a lot and the gateway returns 502.",
+      expected: false,
+    },
   ]);
 });
 
