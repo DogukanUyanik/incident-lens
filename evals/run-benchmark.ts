@@ -1,5 +1,4 @@
 import "dotenv/config";
-import { spawnSync } from "node:child_process";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,7 +9,7 @@ import { SUBMIT_REPORT, type IncidentReport } from "../packages/agent/src/report
 import type { EvidenceCheck } from "../packages/agent/src/verifier.js";
 import { MODEL, runBaseline } from "./baseline.js";
 import { citationValidity, describeGrade, gradeRootCause, type Grade } from "./grader.js";
-import { checkPrecondition, loadScenarios, REPO_ROOT, type Scenario } from "./scenarios.js";
+import { benchmarkable, checkPrecondition, loadScenarios, runScript, type Scenario } from "./scenarios.js";
 
 const EVALS_DIR = path.dirname(fileURLToPath(import.meta.url));
 const RESULTS_DIR = path.join(EVALS_DIR, "results");
@@ -46,7 +45,8 @@ interface ScenarioResult {
 
 // ── CLI ──────────────────────────────────────────────────────────────────────
 
-const scenarios = loadScenarios();
+const allScenarios = loadScenarios();
+const scenarios = benchmarkable(allScenarios);
 
 function argValue(flag: string): string | undefined {
   const i = process.argv.indexOf(flag);
@@ -75,16 +75,15 @@ const all = process.argv.includes("--all");
 const scenarioId = argValue("--scenario");
 if (all === Boolean(scenarioId)) usageAndExit("pass exactly one of --scenario <id> or --all");
 const selected = all ? scenarios : scenarios.filter((s) => s.id === scenarioId);
-if (selected.length === 0) usageAndExit(`unknown scenario "${scenarioId}"`);
-const n = parseRuns();
-
-// ── sandbox orchestration (only with --all) ──────────────────────────────────
-
-function runScript(script: string): boolean {
-  console.log(`\n$ ${script}`);
-  const res = spawnSync("bash", [script], { cwd: REPO_ROOT, stdio: "inherit" });
-  return res.status === 0;
+if (selected.length === 0) {
+  const fixture = allScenarios.some((s) => s.id === scenarioId && s.fixture);
+  usageAndExit(
+    fixture
+      ? `"${scenarioId}" is a test fixture, not benchmarked (use npm run check -- --scenario ${scenarioId})`
+      : `unknown scenario "${scenarioId}"`
+  );
 }
+const n = parseRuns();
 
 // ── runs ─────────────────────────────────────────────────────────────────────
 
@@ -182,6 +181,12 @@ function renderScenario(s: Scenario, res: ScenarioResult | undefined): string[] 
   lines.push(`- **Run:** ${res.startedAt} → ${res.finishedAt || "—"}, N=${res.n}, model \`${res.model}\``);
   lines.push(`- **Alert:** "${s.alert}"`);
   lines.push(`- **Ground truth:** ${s.ground_truth}`);
+  if (s.upstream) {
+    const pin = "image" in s.upstream.pin ? s.upstream.pin.image : s.upstream.pin.commit;
+    lines.push(
+      `- **Upstream:** ${s.upstream.project} @ \`${pin}\` · issue ${s.upstream.issue_url} · fix ${s.upstream.fix_commit_url}`
+    );
+  }
   if (res.skipped) return [...lines, "", `**SKIPPED (setup failed):** ${res.skipped}`, ""];
 
   const truncated = [...new Set(res.runs.flatMap((r) => r.truncated ?? []))].sort();

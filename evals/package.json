@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "bench": "tsx run-benchmark.ts",
-    "test": "tsx --test grader.test.ts",
+    "test": "tsx --test grader.test.ts scenarios.test.ts",
+    "check": "tsx check-scenario.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
