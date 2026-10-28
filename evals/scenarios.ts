@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { execFile } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { execFile, spawnSync } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,6 +32,18 @@ export type PreconditionCheck =
     }
   | { type: "docker"; service: string; min_restart_count?: number; memory_limit_set?: boolean; running?: boolean };
 
+/**
+ * A scenario whose broken service is a pinned third-party project. The issue and fix commit are the source of its
+ * ground truth, so the answer is known independently of us.
+ */
+export interface Upstream {
+  project: string;
+  repo: string;
+  pin: { image: string } | { commit: string };
+  issue_url: string;
+  fix_commit_url: string;
+}
+
 export interface Scenario {
   id: string;
   title: string;
@@ -41,6 +53,11 @@ export interface Scenario {
   reset: string;
   precondition: { description: string; checks: PreconditionCheck[] };
   grading: Grading;
+  upstream?: Upstream;
+  /** Repo-relative compose overrides merged onto sandbox/docker-compose.yml, so their services join the sandbox project. */
+  compose_files?: string[];
+  /** Plumbing test only: never benchmarked or graded. */
+  fixture?: boolean;
 }
 
 export function loadScenarios(file = path.join(here, "scenarios.json")): Scenario[] {
@@ -53,8 +70,49 @@ export function loadScenarios(file = path.join(here, "scenarios.json")): Scenari
         throw new Error(`scenario ${s.id}: unknown precondition check type "${(c as { type: string }).type}"`);
       }
     }
+    if (!s.fixture && s.grading.groups.length === 0) throw new Error(`scenario ${s.id}: no grading groups`);
+    if (s.upstream) validateUpstream(s.id, s.upstream);
+    for (const f of s.compose_files ?? []) {
+      if (!existsSync(path.resolve(REPO_ROOT, f))) throw new Error(`scenario ${s.id}: compose file ${f} not found`);
+    }
   }
   return data.scenarios;
+}
+
+const IMAGE_PIN = /^[^\s@]+(:[\w][\w.-]*|@sha256:[0-9a-f]{64})$/; // explicit tag or digest
+const COMMIT_PIN = /^[0-9a-f]{40}$/;
+
+function validateUpstream(id: string, u: Upstream): void {
+  const fail = (msg: string): never => {
+    throw new Error(`scenario ${id}: upstream ${msg}`);
+  };
+  if (!u.project) fail("project is missing");
+  for (const key of ["repo", "issue_url", "fix_commit_url"] as const) {
+    if (typeof u[key] !== "string" || !u[key].startsWith("https://")) fail(`${key} must be an https:// URL`);
+  }
+  const pin = (u.pin ?? {}) as { image?: unknown; commit?: unknown };
+  if ((pin.image === undefined) === (pin.commit === undefined)) fail("pin needs exactly one of image or commit");
+  if (pin.image !== undefined) {
+    const image = String(pin.image);
+    // A tag needs a ':' after the last '/', otherwise "host:5000/name" would count as tagged.
+    const tagged = IMAGE_PIN.test(image) && (image.includes("@") || image.lastIndexOf(":") > image.lastIndexOf("/"));
+    if (!tagged || image.endsWith(":latest")) fail(`image "${image}" must be pinned to a tag (not latest) or digest`);
+  }
+  if (pin.commit !== undefined && !COMMIT_PIN.test(String(pin.commit))) {
+    fail(`commit "${String(pin.commit)}" must be a full 40-char sha`);
+  }
+}
+
+/** The scenarios the benchmark may run: everything except plumbing fixtures. */
+export function benchmarkable(scenarios: Scenario[]): Scenario[] {
+  return scenarios.filter((s) => !s.fixture);
+}
+
+/** Runs a repo-relative trigger/reset script, streaming its output. True on exit code 0. */
+export function runScript(script: string): boolean {
+  console.log(`\n$ ${script}`);
+  const res = spawnSync("bash", [script], { cwd: REPO_ROOT, stdio: "inherit" });
+  return res.status === 0;
 }
 
 async function checkHttp(c: Extract<PreconditionCheck, { type: "http" }>): Promise<string | null> {

@@ -118,6 +118,31 @@
           { "name": "loc", "scope": "root_cause_or_summary", "negatable": false, "patterns": ["order[- ]service|payload\\.ts"] }
         ]
       }
+    },
+    {
+      "id": "upstream-fixture",
+      "title": "Upstream plumbing fixture (not a benchmark scenario)",
+      "fixture": true,
+      "alert": "fixture only: a pinned third-party service runs next to the sandbox",
+      "ground_truth": "Test fixture for the upstream-scenario plumbing. No failure is injected; it is never benchmarked or graded. The issue and fix URLs are placeholders.",
+      "trigger": "./sandbox/chaos/scenario-upstream-fixture.sh",
+      "reset": "./sandbox/chaos/reset.sh",
+      "compose_files": ["sandbox/docker-compose.upstream-fixture.yml"],
+      "upstream": {
+        "project": "traefik/whoami",
+        "repo": "https://github.com/traefik/whoami",
+        "pin": { "image": "traefik/whoami:v1.10.3" },
+        "issue_url": "https://example.invalid/fixture/issue",
+        "fix_commit_url": "https://example.invalid/fixture/fix-commit"
+      },
+      "precondition": {
+        "description": "The pinned upstream-fixture container runs in the sandbox project and answers GET / with 200.",
+        "checks": [
+          { "type": "docker", "service": "upstream-fixture", "running": true },
+          { "type": "http", "method": "GET", "url": "http://localhost:8090/", "expect_status": 200, "timeout_ms": 4000 }
+        ]
+      },
+      "grading": { "groups": [] }
     }
   ]
 }

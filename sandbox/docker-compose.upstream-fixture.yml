@@ -1,0 +1,8 @@
+# Test fixture for the upstream-scenario plumbing (evals/scenarios.json → upstream-fixture), not a real scenario.
+# Upstream services are merged onto docker-compose.yml so they join the "sandbox" compose project: the MCP tools
+# and the precondition checks only see containers in that project. reset.sh (--remove-orphans) removes them again.
+services:
+  upstream-fixture:
+    image: traefik/whoami:v1.10.3
+    ports:
+      - "8090:80"
