@@ -143,6 +143,62 @@
         ]
       },
       "grading": { "groups": [] }
+    },
+    {
+      "id": "prometheus-bad-scrape-crash",
+      "title": "Prometheus crash loop on a malformed scrape response (upstream prometheus#18225)",
+      "alert": "the metrics service (prometheus) keeps going down and restarting",
+      "ground_truth": "A scrape target, metrics-target, serves a malformed metrics line. Prometheus v3.10.0's text parser mishandles it and panics (runtime error: slice bounds out of range) during the scrape. The scrape loop does not recover, so the process exits (code 2) and Docker's on-failure policy restarts it, in a loop: about every 9s at first, then slower as Docker's restart backoff grows. Fixed in v3.11.0, where the target is just marked down. Our addition: the metrics-target target is the trigger, not part of the upstream bug. Evidence limit: no tool shows the response body, and the panic is only in the tail of the logs while the container is restarting.",
+      "trigger": "./sandbox/chaos/scenario-prometheus-bad-scrape.sh",
+      "reset": "./sandbox/chaos/reset.sh",
+      "compose_files": ["sandbox/docker-compose.prometheus-bad-scrape.yml"],
+      "upstream": {
+        "project": "prometheus/prometheus",
+        "repo": "https://github.com/prometheus/prometheus",
+        "pin": { "image": "prom/prometheus:v3.10.0" },
+        "issue_url": "https://github.com/prometheus/prometheus/issues/18225",
+        "fix_commit_url": "https://github.com/prometheus/prometheus/commit/3b44b8b463be9291a5605b935a5fbeda88db1366"
+      },
+      "precondition": {
+        "description": "prometheus has restarted at least 3 times and metrics-target is running. The trigger polls for up to 120s for the restart count; measured: the first panic about 9s after start, 9 restarts in 120s.",
+        "checks": [
+          { "type": "docker", "service": "prometheus", "min_restart_count": 3 },
+          { "type": "docker", "service": "metrics-target", "running": true }
+        ]
+      },
+      "grading": {
+        "groups": [
+          {
+            "name": "crash",
+            "scope": "root_cause",
+            "negatable": true,
+            "patterns": [
+              "\\bpanic",
+              "\\bcrash",
+              "slice bounds",
+              "runtime error",
+              "\\b(exits|exited|dies|died|terminates|terminated)\\b"
+            ]
+          },
+          {
+            "name": "scrape",
+            "scope": "root_cause",
+            "negatable": true,
+            "patterns": [
+              "metrics[- ]target",
+              "exporter",
+              "\\bscrap(e|es|ed|er|ing)\\b",
+              "malformed (metrics?|exposition|line|sample)"
+            ]
+          },
+          {
+            "name": "loc",
+            "scope": "root_cause_or_summary",
+            "negatable": false,
+            "patterns": ["prometheus"]
+          }
+        ]
+      }
     }
   ]
 }

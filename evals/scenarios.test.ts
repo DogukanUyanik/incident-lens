@@ -7,11 +7,11 @@ import { benchmarkable, loadScenarios, type Scenario } from "./scenarios.js";
 
 const EXISTING = ["db-pool-exhaustion", "memory-leak-oom", "corrupt-deploy"];
 
-test("the existing scenarios load as before and are the only benchmarkable ones", () => {
+test("the existing scenarios load as before and are the first benchmarkable ones", () => {
   const all = loadScenarios();
   const bench = benchmarkable(all);
-  assert.deepEqual(bench.map((s) => s.id), EXISTING);
-  for (const s of bench) {
+  assert.deepEqual(bench.slice(0, EXISTING.length).map((s) => s.id), EXISTING);
+  for (const s of bench.slice(0, EXISTING.length)) {
     assert.equal(s.upstream, undefined, s.id);
     assert.equal(s.compose_files, undefined, s.id);
     assert.equal(s.fixture, undefined, s.id);
@@ -26,6 +26,21 @@ test("the upstream fixture loads with its pin and is never benchmarked", () => {
   assert.deepEqual(fixture.upstream?.pin, { image: "traefik/whoami:v1.10.3" });
   assert.deepEqual(fixture.compose_files, ["sandbox/docker-compose.upstream-fixture.yml"]);
   assert.ok(!benchmarkable(loadScenarios()).some((s) => s.id === "upstream-fixture"));
+});
+
+test("prometheus-bad-scrape-crash loads with its pin and is benchmarkable", () => {
+  const s = loadScenarios().find((x) => x.id === "prometheus-bad-scrape-crash");
+  assert.ok(s);
+  assert.equal(s.fixture, undefined);
+  assert.deepEqual(s.upstream?.pin, { image: "prom/prometheus:v3.10.0" });
+  assert.equal(s.upstream?.issue_url, "https://github.com/prometheus/prometheus/issues/18225");
+  assert.equal(
+    s.upstream?.fix_commit_url,
+    "https://github.com/prometheus/prometheus/commit/3b44b8b463be9291a5605b935a5fbeda88db1366"
+  );
+  assert.deepEqual(s.compose_files, ["sandbox/docker-compose.prometheus-bad-scrape.yml"]);
+  assert.deepEqual(s.grading.groups.map((g) => g.name), ["crash", "scrape", "loc"]);
+  assert.ok(benchmarkable(loadScenarios()).some((x) => x.id === "prometheus-bad-scrape-crash"));
 });
 
 // ── loader validation of the upstream fields ─────────────────────────────────────────────────────────────────

@@ -1,0 +1,1508 @@
+{
+  "id": "prometheus-bad-scrape-crash",
+  "startedAt": "2026-10-29T01:14:24.129Z",
+  "finishedAt": "2026-10-29T01:16:54.379Z",
+  "model": "claude-sonnet-5-5",
+  "n": 5,
+  "runs": [
+    {
+      "approach": "agent",
+      "run": 1,
+      "ok": true,
+      "report": {
+        "summary": "Prometheus (3.10.0) is crash-looping (restartCount 9). It panics with a slice-bounds runtime error in its text parser a few seconds after each start, as soon as it scrapes the metrics-target.",
+        "root_cause": "Prometheus crashes inside its Prometheus text-format parser (PromParser.Labels at model/textparse/promparse.go:237) while processing the scrape response from metrics-target. The scrape returns a malformed 5-byte /metrics body, and the parser hits an unchecked slice index ([2:1]). The panic kills the whole process, and the restart policy brings it back, so the loop repeats on every scrape. The trigger is the malformed payload served by metrics-target, combined with a parser bug in this Prometheus build that panics instead of rejecting the bad input. The metrics-target is only observed serving a 5-byte body (its nginx access log); I could not read the body itself or the Prometheus config, so the exact payload is inferred. order-service, postgres and the gateway are not involved.",
+        "evidence": [
+          {
+            "source": "get_container_logs {\"container\":\"prometheus\",\"tail\":100}",
+            "verbatim_quote": "panic: runtime error: slice bounds out of range [2:1]"
+          },
+          {
+            "source": "get_container_logs {\"container\":\"prometheus\",\"tail\":100}",
+            "verbatim_quote": "github.com/prometheus/prometheus/model/textparse.(*PromParser).Labels(0x31a94ee1e750, 0x31a94e9cc410)"
+          },
+          {
+            "source": "get_container_logs {\"container\":\"metrics-target\",\"tail\":50}",
+            "verbatim_quote": "\"GET /metrics HTTP/1.1\" 200 5 \"-\" \"Prometheus/3.10.0\" \"-\""
+          },
+          {
+            "source": "get_container_stats {\"container\":\"prometheus\"}",
+            "verbatim_quote": "\"restartCount\": 9"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs {\"container\":\"prometheus\",\"tail\":100}",
+          "quote": "panic: runtime error: slice bounds out of range [2:1]",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"prometheus\",\"tail\":100}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs {\"container\":\"prometheus\",\"tail\":100}",
+          "quote": "github.com/prometheus/prometheus/model/textparse.(*PromParser).Labels(0x31a94ee1e750, 0x31a94e9cc410)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"prometheus\",\"tail\":100}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs {\"container\":\"metrics-target\",\"tail\":50}",
+          "quote": "\"GET /metrics HTTP/1.1\" 200 5 \"-\" \"Prometheus/3.10.0\" \"-\"",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"metrics-target\",\"tail\":50}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_stats {\"container\":\"prometheus\"}",
+          "quote": "\"restartCount\": 9",
+          "ok": true,
+          "matchedIn": [
+            "get_container_stats {\"container\":\"prometheus\"}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "crash",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "scrape",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 22635,
+        "output_tokens": 1268
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 19.564103485,
+      "turns": 4,
+      "retried": false,
+      "trace": [
+        {
+          "turn": 1,
+          "attempt": 1,
+          "stop_reason": "tool_use",
+          "output_tokens": 179,
+          "blocks": [
+            {
+              "type": "text",
+              "chars": 72
+            },
+            {
+              "type": "tool_use",
+              "name": "get_cluster_topology",
+              "chars": 2
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_logs",
+              "chars": 37
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_stats",
+              "chars": 26
+            }
+          ]
+        },
+        {
+          "turn": 2,
+          "attempt": 1,
+          "stop_reason": "tool_use",
+          "output_tokens": 172,
+          "blocks": [
+            {
+              "type": "text",
+              "chars": 139
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_logs",
+              "chars": 40
+            },
+            {
+              "type": "tool_use",
+              "name": "inspect_git_history",
+              "chars": 28
+            }
+          ]
+        },
+        {
+          "turn": 3,
+          "attempt": 1,
+          "stop_reason": "tool_use",
+          "output_tokens": 130,
+          "blocks": [
+            {
+              "type": "thinking",
+              "chars": 173
+            },
+            {
+              "type": "tool_use",
+              "name": "inspect_git_history",
+              "chars": 27
+            }
+          ]
+        },
+        {
+          "turn": 4,
+          "attempt": 1,
+          "stop_reason": "tool_use",
+          "output_tokens": 787,
+          "blocks": [
+            {
+              "type": "text",
+              "chars": 189
+            },
+            {
+              "type": "tool_use",
+              "name": "submit_report",
+              "chars": 1634
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "approach": "baseline",
+      "run": 1,
+      "ok": true,
+      "report": {
+        "summary": "Prometheus is crash-looping (restartCount 9): it panics with a slice-bounds-out-of-range error each time it scrapes the metrics-target /metrics endpoint, so the metrics service is repeatedly down.",
+        "root_cause": "The metrics-target container (nginx) serves a malformed/non-Prometheus exposition payload on /metrics: a 200 response of only 5 bytes. Prometheus's text parser (PromParser.Labels) cannot handle this body and panics on a slice bounds error instead of rejecting the scrape. Every restart re-scrapes the same bad target and crashes again within seconds (last panic at 01:14:29, the same moment as the 01:14:29 scrape logged by metrics-target). The problem is a bad scrape target response, not resource exhaustion (oomKilled=false) or any other service (gateway, order-service, postgres are healthy).",
+        "evidence": [
+          {
+            "source": "get_container_logs prometheus",
+            "verbatim_quote": "panic: runtime error: slice bounds out of range [2:1]"
+          },
+          {
+            "source": "get_container_logs prometheus",
+            "verbatim_quote": "github.com/prometheus/prometheus/model/textparse.(*PromParser).Labels(0x31a94ee1e750, 0x31a94e9cc410)"
+          },
+          {
+            "source": "get_container_logs metrics-target",
+            "verbatim_quote": "2026-10-29T01:14:29.955194977Z 172.20.0.5 - - [29/Oct/2026:01:14:29 +0000] \"GET /metrics HTTP/1.1\" 200 5 \"-\" \"Prometheus/3.10.0\" \"-\""
+          },
+          {
+            "source": "get_container_stats prometheus",
+            "verbatim_quote": "\"restartCount\": 9,"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs prometheus",
+          "quote": "panic: runtime error: slice bounds out of range [2:1]",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"prometheus\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs prometheus",
+          "quote": "github.com/prometheus/prometheus/model/textparse.(*PromParser).Labels(0x31a94ee1e750, 0x31a94e9cc410)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"prometheus\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs metrics-target",
+          "quote": "2026-10-29T01:14:29.955194977Z 172.20.0.5 - - [29/Oct/2026:01:14:29 +0000] \"GET /metrics HTTP/1.1\" 200 5 \"-\" \"Prometheus/3.10.0\" \"-\"",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"metrics-target\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_stats prometheus",
+          "quote": "\"restartCount\": 9,",
+          "ok": true,
+          "matchedIn": [
+            "get_container_stats {\"container\":\"prometheus\"}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "crash",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "scrape",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 14823,
+        "output_tokens": 608
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 12.424700617,
+      "truncated": [
+        "postgres",
+        "prometheus"
+      ],
+      "retried": false
+    },
+    {
+      "approach": "agent",
+      "run": 2,
+      "ok": true,
+      "report": {
+        "summary": "Prometheus crash-loops (restartCount 9, up only a few seconds each time). Roughly 10 seconds after each start it panics with a slice-bounds-out-of-range error inside its text-format parser while parsing the scrape response from metrics-target.",
+        "root_cause": "The crash is a Go runtime panic inside Prometheus 3.10.0 (model/textparse PromParser.Labels, promparse.go:237), triggered when it parses the /metrics response from the metrics-target (nginx) service. The target returns a tiny 5-byte body with HTTP 200, which is not a valid or complete Prometheus exposition payload. The parser does not handle it and panics (\"slice bounds out of range [2:1]\") instead of recording a scrape error. This kills the whole process on every scrape, so Prometheus restarts, scrapes again about 10s later, and panics again. Prometheus itself was not OOM-killed and was not misconfigured. The panic is a parser bug in this version, set off by the malformed payload that metrics-target serves. The 5-byte body was inferred from the access-log size field and was not inspected directly. The fix is to make metrics-target serve valid exposition output (or remove that scrape target), and to upgrade or patch Prometheus.",
+        "evidence": [
+          {
+            "source": "get_container_logs {\"container\":\"prometheus\",\"tail\":1000}",
+            "verbatim_quote": "panic: runtime error: slice bounds out of range [2:1]"
+          },
+          {
+            "source": "get_container_logs {\"container\":\"prometheus\",\"tail\":1000}",
+            "verbatim_quote": "github.com/prometheus/prometheus/model/textparse.(*PromParser).Labels(0xd88e28b8000, 0xd88e2bb0130)"
+          },
+          {
+            "source": "get_container_logs {\"container\":\"metrics-target\",\"tail\":5}",
+            "verbatim_quote": "2026-10-29T01:15:04.954671454Z 172.20.0.5 - - [29/Oct/2026:01:15:04 +0000] \"GET /metrics HTTP/1.1\" 200 5 \"-\" \"Prometheus/3.10.0\" \"-\""
+          },
+          {
+            "source": "get_container_stats {\"container\":\"prometheus\"}",
+            "verbatim_quote": "\"restartCount\": 9"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs {\"container\":\"prometheus\",\"tail\":1000}",
+          "quote": "panic: runtime error: slice bounds out of range [2:1]",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"prometheus\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs {\"container\":\"prometheus\",\"tail\":1000}",
+          "quote": "github.com/prometheus/prometheus/model/textparse.(*PromParser).Labels(0xd88e28b8000, 0xd88e2bb0130)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"prometheus\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs {\"container\":\"metrics-target\",\"tail\":5}",
+          "quote": "2026-10-29T01:15:04.954671454Z 172.20.0.5 - - [29/Oct/2026:01:15:04 +0000] \"GET /metrics HTTP/1.1\" 200 5 \"-\" \"Prometheus/3.10.0\" \"-\"",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"metrics-target\",\"tail\":5}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_stats {\"container\":\"prometheus\"}",
+          "quote": "\"restartCount\": 9",
+          "ok": true,
+          "matchedIn": [
+            "get_container_stats {\"container\":\"prometheus\"}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "crash",
+            "matched": true,
+            "negated": 3
+          },
+          {
+            "name": "scrape",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 41712,
+        "output_tokens": 1726
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 21.388205605000003,
+      "turns": 5,
+      "retried": false,
+      "trace": [
+        {
+          "turn": 1,
+          "attempt": 1,
+          "stop_reason": "tool_use",
+          "output_tokens": 173,
+          "blocks": [
+            {
+              "type": "text",
+              "chars": 69
+            },
+            {
+              "type": "tool_use",
+              "name": "get_cluster_topology",
+              "chars": 2
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_logs",
+              "chars": 37
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_stats",
+              "chars": 26
+            }
+          ]
+        },
+        {
+          "turn": 2,
+          "attempt": 1,
+          "stop_reason": "tool_use",
+          "output_tokens": 243,
+          "blocks": [
+            {
+              "type": "text",
+              "chars": 116
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_logs",
+              "chars": 36
+            },
+            {
+              "type": "tool_use",
+              "name": "inspect_git_history",
+              "chars": 24
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_logs",
+              "chars": 40
+            }
+          ]
+        },
+        {
+          "turn": 3,
+          "attempt": 1,
+          "stop_reason": "tool_use",
+          "output_tokens": 181,
+          "blocks": [
+            {
+              "type": "text",
+              "chars": 183
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_stats",
+              "chars": 26
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_logs",
+              "chars": 38
+            }
+          ]
+        },
+        {
+          "turn": 4,
+          "attempt": 1,
+          "stop_reason": "tool_use",
+          "output_tokens": 198,
+          "blocks": [
+            {
+              "type": "thinking",
+              "chars": 236
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_logs",
+              "chars": 39
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_stats",
+              "chars": 30
+            }
+          ]
+        },
+        {
+          "turn": 5,
+          "attempt": 1,
+          "stop_reason": "tool_use",
+          "output_tokens": 931,
+          "blocks": [
+            {
+              "type": "text",
+              "chars": 191
+            },
+            {
+              "type": "tool_use",
+              "name": "submit_report",
+              "chars": 1916
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "approach": "baseline",
+      "run": 2,
+      "ok": true,
+      "report": {
+        "summary": "Prometheus is in a crash loop (restartCount 10, status 'restarting'). Each time it scrapes the metrics-target endpoint it panics in the text-format parser and the process exits, so metrics collection is down.",
+        "root_cause": "Prometheus 3.10.0 hits a bug in its text-format parser (PromParser.Labels) when it parses the response from metrics-target's /metrics endpoint. metrics-target is an nginx container that returns a 5-byte body with HTTP 200, which is not valid Prometheus exposition content. The parser slices the label data out of bounds, raises an unrecovered panic ('slice bounds out of range [2:1]'), and the process exits. Every restart repeats the first scrape and crashes again. The cause is the malformed scrape target response combined with Prometheus not handling it gracefully. It is not an OOM, a resource problem, or a deploy regression in order-service, postgres or gateway, all of which are healthy.",
+        "evidence": [
+          {
+            "source": "get_container_logs prometheus",
+            "verbatim_quote": "panic: runtime error: slice bounds out of range [2:1]"
+          },
+          {
+            "source": "get_container_logs prometheus",
+            "verbatim_quote": "/app/model/textparse/promparse.go:237 +0x8d4"
+          },
+          {
+            "source": "get_container_logs metrics-target",
+            "verbatim_quote": "\"GET /metrics HTTP/1.1\" 200 5 \"-\" \"Prometheus/3.10.0\" \"-\""
+          },
+          {
+            "source": "get_container_stats prometheus",
+            "verbatim_quote": "\"restartCount\": 10,"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs prometheus",
+          "quote": "panic: runtime error: slice bounds out of range [2:1]",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"prometheus\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs prometheus",
+          "quote": "/app/model/textparse/promparse.go:237 +0x8d4",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"prometheus\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs metrics-target",
+          "quote": "\"GET /metrics HTTP/1.1\" 200 5 \"-\" \"Prometheus/3.10.0\" \"-\"",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"metrics-target\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_stats prometheus",
+          "quote": "\"restartCount\": 10,",
+          "ok": true,
+          "matchedIn": [
+            "get_container_stats {\"container\":\"prometheus\"}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "crash",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "scrape",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 14896,
+        "output_tokens": 551
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 11.43870764400001,
+      "truncated": [
+        "postgres",
+        "prometheus"
+      ],
+      "retried": false
+    },
+    {
+      "approach": "agent",
+      "run": 3,
+      "ok": true,
+      "report": {
+        "summary": "Prometheus is crash-looping (restartCount 10). Each time it scrapes the metrics-target /metrics endpoint it panics in its text-format parser and the container exits and restarts, so metrics collection is repeatedly interrupted.",
+        "root_cause": "The metrics-target service (nginx) serves a malformed 5-byte body on /metrics with HTTP 200. When Prometheus 3.10.0 parses that payload, PromParser.Labels panics with \"slice bounds out of range [2:1]\" (promparse.go:237). The panic is unrecovered and kills the whole process, and the restart policy brings it back, so every scrape of that target (about 10s after startup) crashes it again. The trigger is the invalid exposition payload from metrics-target, and the Prometheus parser bug turns that bad input into a crash instead of a scrape error.",
+        "evidence": [
+          {
+            "source": "get_container_logs {\"container\":\"prometheus\"}",
+            "verbatim_quote": "panic: runtime error: slice bounds out of range [2:1]"
+          },
+          {
+            "source": "get_container_logs {\"container\":\"prometheus\"}",
+            "verbatim_quote": "/app/model/textparse/promparse.go:237 +0x8d4"
+          },
+          {
+            "source": "get_container_logs {\"container\":\"metrics-target\"}",
+            "verbatim_quote": "\"GET /metrics HTTP/1.1\" 200 5 \"-\" \"Prometheus/3.10.0\" \"-\""
+          },
+          {
+            "source": "get_container_stats {\"container\":\"prometheus\"}",
+            "verbatim_quote": "\"restartCount\": 10"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs {\"container\":\"prometheus\"}",
+          "quote": "panic: runtime error: slice bounds out of range [2:1]",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"prometheus\",\"tail\":100}",
+            "get_container_logs {\"container\":\"prometheus\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs {\"container\":\"prometheus\"}",
+          "quote": "/app/model/textparse/promparse.go:237 +0x8d4",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"prometheus\",\"tail\":100}",
+            "get_container_logs {\"container\":\"prometheus\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs {\"container\":\"metrics-target\"}",
+          "quote": "\"GET /metrics HTTP/1.1\" 200 5 \"-\" \"Prometheus/3.10.0\" \"-\"",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"metrics-target\",\"tail\":50}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_stats {\"container\":\"prometheus\"}",
+          "quote": "\"restartCount\": 10",
+          "ok": true,
+          "matchedIn": [
+            "get_container_stats {\"container\":\"prometheus\"}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "crash",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "scrape",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 33357,
+        "output_tokens": 1268
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 15.643860281999995,
+      "turns": 5,
+      "retried": false,
+      "trace": [
+        {
+          "turn": 1,
+          "attempt": 1,
+          "stop_reason": "tool_use",
+          "output_tokens": 179,
+          "blocks": [
+            {
+              "type": "text",
+              "chars": 84
+            },
+            {
+              "type": "tool_use",
+              "name": "get_cluster_topology",
+              "chars": 2
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_logs",
+              "chars": 37
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_stats",
+              "chars": 26
+            }
+          ]
+        },
+        {
+          "turn": 2,
+          "attempt": 1,
+          "stop_reason": "tool_use",
+          "output_tokens": 159,
+          "blocks": [
+            {
+              "type": "text",
+              "chars": 90
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_logs",
+              "chars": 40
+            },
+            {
+              "type": "tool_use",
+              "name": "inspect_git_history",
+              "chars": 28
+            }
+          ]
+        },
+        {
+          "turn": 3,
+          "attempt": 1,
+          "stop_reason": "tool_use",
+          "output_tokens": 174,
+          "blocks": [
+            {
+              "type": "thinking",
+              "chars": 194
+            },
+            {
+              "type": "tool_use",
+              "name": "inspect_git_history",
+              "chars": 24
+            },
+            {
+              "type": "tool_use",
+              "name": "inspect_git_history",
+              "chars": 27
+            }
+          ]
+        },
+        {
+          "turn": 4,
+          "attempt": 1,
+          "stop_reason": "tool_use",
+          "output_tokens": 117,
+          "blocks": [
+            {
+              "type": "text",
+              "chars": 134
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_logs",
+              "chars": 38
+            }
+          ]
+        },
+        {
+          "turn": 5,
+          "attempt": 1,
+          "stop_reason": "tool_use",
+          "output_tokens": 639,
+          "blocks": [
+            {
+              "type": "text",
+              "chars": 54
+            },
+            {
+              "type": "tool_use",
+              "name": "submit_report",
+              "chars": 1337
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "approach": "baseline",
+      "run": 3,
+      "ok": true,
+      "report": {
+        "summary": "Prometheus is crash-looping (restartCount 10): about 9 seconds after each start, its first scrape of the metrics-target container triggers a Go panic and the process exits. Prometheus is down and no metrics are being collected.",
+        "root_cause": "A Prometheus v3.10.0 bug in its text-format parser. Parsing the /metrics response from metrics-target (nginx, returning a 5-byte body with HTTP 200) makes PromParser.Labels panic with 'slice bounds out of range [2:1]'. The scrape loop does not recover from the panic, so the whole process dies and restarts, then dies again on the next scrape. The trigger is the malformed/non-Prometheus-format /metrics payload served by metrics-target. The panic is not caused by resource exhaustion or a deploy: OOMKilled is false and the other services are healthy.",
+        "evidence": [
+          {
+            "source": "get_container_logs prometheus",
+            "verbatim_quote": "panic: runtime error: slice bounds out of range [2:1]"
+          },
+          {
+            "source": "get_container_logs prometheus",
+            "verbatim_quote": "github.com/prometheus/prometheus/model/textparse.(*PromParser).Labels(0xd88e28b8000, 0xd88e2bb0130)"
+          },
+          {
+            "source": "get_container_logs metrics-target",
+            "verbatim_quote": "172.20.0.5 - - [29/Oct/2026:01:15:04 +0000] \"GET /metrics HTTP/1.1\" 200 5 \"-\" \"Prometheus/3.10.0\" \"-\""
+          },
+          {
+            "source": "get_container_stats prometheus",
+            "verbatim_quote": "\"restartCount\": 10,"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs prometheus",
+          "quote": "panic: runtime error: slice bounds out of range [2:1]",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"prometheus\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs prometheus",
+          "quote": "github.com/prometheus/prometheus/model/textparse.(*PromParser).Labels(0xd88e28b8000, 0xd88e2bb0130)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"prometheus\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs metrics-target",
+          "quote": "172.20.0.5 - - [29/Oct/2026:01:15:04 +0000] \"GET /metrics HTTP/1.1\" 200 5 \"-\" \"Prometheus/3.10.0\" \"-\"",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"metrics-target\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_stats prometheus",
+          "quote": "\"restartCount\": 10,",
+          "ok": true,
+          "matchedIn": [
+            "get_container_stats {\"container\":\"prometheus\"}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "crash",
+            "matched": true,
+            "negated": 1
+          },
+          {
+            "name": "scrape",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 14896,
+        "output_tokens": 577
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 12.338642833999998,
+      "truncated": [
+        "postgres",
+        "prometheus"
+      ],
+      "retried": false
+    },
+    {
+      "approach": "agent",
+      "run": 4,
+      "ok": true,
+      "report": {
+        "summary": "Prometheus is in a crash loop (restartCount 11 and rising). Each time it scrapes the metrics-target service, it panics in its text-format parser and exits, so metrics collection keeps going down.",
+        "root_cause": "The metrics-target service (nginx) returns a malformed 5-byte body on /metrics with HTTP 200. When Prometheus 3.10.0 parses it, `PromParser.Labels` panics with \"slice bounds out of range [2:1]\" in the scrape loop. The panic is unrecovered and kills the whole process, which the restart policy then restarts. Each restart scrapes the target again and crashes again. The scrape intervals in the target's access log stretch out (10s, 15s, 20s, 35s, 60s), which is consistent with restart backoff. The fault is a bad scrape target payload combined with a parser bug in Prometheus 3.10.0. It is not an OOM kill or a resource issue: oomKilled is false and memory use is about 22 MiB. The target is healthy and the Prometheus config loads fine.",
+        "evidence": [
+          {
+            "source": "get_container_logs {\"container\":\"prometheus\",\"tail\":1000}",
+            "verbatim_quote": "panic: runtime error: slice bounds out of range [2:1]"
+          },
+          {
+            "source": "get_container_logs {\"container\":\"prometheus\",\"tail\":1000}",
+            "verbatim_quote": "github.com/prometheus/prometheus/model/textparse.(*PromParser).Labels(0x2a1bd374a1a0, 0x2a1bd3f0c0c0)"
+          },
+          {
+            "source": "get_container_logs {\"container\":\"metrics-target\",\"tail\":50}",
+            "verbatim_quote": "\"GET /metrics HTTP/1.1\" 200 5 \"-\" \"Prometheus/3.10.0\" \"-\""
+          },
+          {
+            "source": "get_container_stats {\"container\":\"prometheus\"}",
+            "verbatim_quote": "\"oomKilled\": false"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs {\"container\":\"prometheus\",\"tail\":1000}",
+          "quote": "panic: runtime error: slice bounds out of range [2:1]",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"prometheus\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs {\"container\":\"prometheus\",\"tail\":1000}",
+          "quote": "github.com/prometheus/prometheus/model/textparse.(*PromParser).Labels(0x2a1bd374a1a0, 0x2a1bd3f0c0c0)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"prometheus\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs {\"container\":\"metrics-target\",\"tail\":50}",
+          "quote": "\"GET /metrics HTTP/1.1\" 200 5 \"-\" \"Prometheus/3.10.0\" \"-\"",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"metrics-target\",\"tail\":50}",
+            "get_container_logs {\"container\":\"metrics-target\",\"tail\":5}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_stats {\"container\":\"prometheus\"}",
+          "quote": "\"oomKilled\": false",
+          "ok": true,
+          "matchedIn": [
+            "get_container_stats {\"container\":\"prometheus\"}",
+            "get_container_stats {\"container\":\"metrics-target\"}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "crash",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "scrape",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 50944,
+        "output_tokens": 1596
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 20.480262273,
+      "turns": 6,
+      "retried": false,
+      "trace": [
+        {
+          "turn": 1,
+          "attempt": 1,
+          "stop_reason": "tool_use",
+          "output_tokens": 180,
+          "blocks": [
+            {
+              "type": "text",
+              "chars": 80
+            },
+            {
+              "type": "tool_use",
+              "name": "get_cluster_topology",
+              "chars": 2
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_logs",
+              "chars": 37
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_stats",
+              "chars": 26
+            }
+          ]
+        },
+        {
+          "turn": 2,
+          "attempt": 1,
+          "stop_reason": "tool_use",
+          "output_tokens": 171,
+          "blocks": [
+            {
+              "type": "text",
+              "chars": 126
+            },
+            {
+              "type": "tool_use",
+              "name": "inspect_git_history",
+              "chars": 24
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_logs",
+              "chars": 36
+            }
+          ]
+        },
+        {
+          "turn": 3,
+          "attempt": 1,
+          "stop_reason": "tool_use",
+          "output_tokens": 220,
+          "blocks": [
+            {
+              "type": "text",
+              "chars": 138
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_stats",
+              "chars": 26
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_logs",
+              "chars": 40
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_stats",
+              "chars": 30
+            }
+          ]
+        },
+        {
+          "turn": 4,
+          "attempt": 1,
+          "stop_reason": "tool_use",
+          "output_tokens": 138,
+          "blocks": [
+            {
+              "type": "text",
+              "chars": 199
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_logs",
+              "chars": 38
+            }
+          ]
+        },
+        {
+          "turn": 5,
+          "attempt": 1,
+          "stop_reason": "tool_use",
+          "output_tokens": 131,
+          "blocks": [
+            {
+              "type": "text",
+              "chars": 162
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_logs",
+              "chars": 39
+            }
+          ]
+        },
+        {
+          "turn": 6,
+          "attempt": 1,
+          "stop_reason": "tool_use",
+          "output_tokens": 756,
+          "blocks": [
+            {
+              "type": "text",
+              "chars": 24
+            },
+            {
+              "type": "tool_use",
+              "name": "submit_report",
+              "chars": 1593
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "approach": "baseline",
+      "run": 4,
+      "ok": true,
+      "report": {
+        "summary": "Prometheus is crash-looping (restartCount 11): it starts, loads config and TSDB fine, then panics within seconds of its first scrape of the metrics-target and is restarted by Docker. Metrics collection is down; the other services (gateway, order-service, postgres) are healthy.",
+        "root_cause": "Prometheus 3.10.0 panics in its text-format parser (PromParser.Labels, promparse.go:237, slice bounds out of range [2:1]) when parsing the response from the metrics-target scrape endpoint. metrics-target is an nginx container whose /metrics returns a 5-byte body that is not valid Prometheus exposition format. The malformed payload triggers a parser bug in Prometheus, which crashes the whole process (the scrape-loop goroutine panic is unrecovered) instead of just marking the target as failed, so it restarts and panics again on the next scrape. This is unrelated to order-service/postgres or any recent deploy.",
+        "evidence": [
+          {
+            "source": "get_container_logs prometheus",
+            "verbatim_quote": "panic: runtime error: slice bounds out of range [2:1]"
+          },
+          {
+            "source": "get_container_logs prometheus",
+            "verbatim_quote": "github.com/prometheus/prometheus/model/textparse.(*PromParser).Labels(0x2a1bd374a1a0, 0x2a1bd3f0c0c0)"
+          },
+          {
+            "source": "get_container_logs metrics-target",
+            "verbatim_quote": "172.20.0.5 - - [29/Oct/2026:01:16:04 +0000] \"GET /metrics HTTP/1.1\" 200 5 \"-\" \"Prometheus/3.10.0\" \"-\""
+          },
+          {
+            "source": "get_container_stats prometheus",
+            "verbatim_quote": "\"restartCount\": 11,"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs prometheus",
+          "quote": "panic: runtime error: slice bounds out of range [2:1]",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"prometheus\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs prometheus",
+          "quote": "github.com/prometheus/prometheus/model/textparse.(*PromParser).Labels(0x2a1bd374a1a0, 0x2a1bd3f0c0c0)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"prometheus\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs metrics-target",
+          "quote": "172.20.0.5 - - [29/Oct/2026:01:16:04 +0000] \"GET /metrics HTTP/1.1\" 200 5 \"-\" \"Prometheus/3.10.0\" \"-\"",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"metrics-target\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_stats prometheus",
+          "quote": "\"restartCount\": 11,",
+          "ok": true,
+          "matchedIn": [
+            "get_container_stats {\"container\":\"prometheus\"}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "crash",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "scrape",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 15016,
+        "output_tokens": 619
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 12.288264267000006,
+      "truncated": [
+        "postgres",
+        "prometheus"
+      ],
+      "retried": false
+    },
+    {
+      "approach": "agent",
+      "run": 5,
+      "ok": true,
+      "report": {
+        "summary": "Prometheus is crash-looping (11+ restarts). Each time it scrapes metrics-target's /metrics endpoint it panics in its text parser and exits, so metrics collection is down.",
+        "root_cause": "The metrics-target (nginx) /metrics endpoint returns a tiny, malformed 5-byte body that is not valid Prometheus exposition format. When Prometheus (3.10.0) scrapes it, PromParser.Labels hits a slice-bounds panic (\"slice bounds out of range [2:1]\") in scrape/textparse. The panic is not recovered, so the whole Prometheus process dies and restarts. Each restart then rescans the target and crashes again at the first scrape (about 8s after startup, matching the 01:16:04 scrape). The trigger is the bad payload from metrics-target, combined with a parser bug in Prometheus that panics instead of rejecting the input.",
+        "evidence": [
+          {
+            "source": "get_container_logs {\"container\":\"prometheus\"}",
+            "verbatim_quote": "panic: runtime error: slice bounds out of range [2:1]"
+          },
+          {
+            "source": "get_container_logs {\"container\":\"prometheus\"}",
+            "verbatim_quote": "github.com/prometheus/prometheus/model/textparse.(*PromParser).Labels(0x2a1bd374a1a0, 0x2a1bd3f0c0c0)"
+          },
+          {
+            "source": "get_container_logs {\"container\":\"metrics-target\"}",
+            "verbatim_quote": "2026-10-29T01:16:04.955214434Z 172.20.0.5 - - [29/Oct/2026:01:16:04 +0000] \"GET /metrics HTTP/1.1\" 200 5 \"-\" \"Prometheus/3.10.0\" \"-\""
+          },
+          {
+            "source": "get_container_stats {\"container\":\"prometheus\"}",
+            "verbatim_quote": "\"restartCount\": 11"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs {\"container\":\"prometheus\"}",
+          "quote": "panic: runtime error: slice bounds out of range [2:1]",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"prometheus\",\"tail\":100}",
+            "get_container_logs {\"container\":\"prometheus\",\"tail\":40}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs {\"container\":\"prometheus\"}",
+          "quote": "github.com/prometheus/prometheus/model/textparse.(*PromParser).Labels(0x2a1bd374a1a0, 0x2a1bd3f0c0c0)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"prometheus\",\"tail\":100}",
+            "get_container_logs {\"container\":\"prometheus\",\"tail\":40}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs {\"container\":\"metrics-target\"}",
+          "quote": "2026-10-29T01:16:04.955214434Z 172.20.0.5 - - [29/Oct/2026:01:16:04 +0000] \"GET /metrics HTTP/1.1\" 200 5 \"-\" \"Prometheus/3.10.0\" \"-\"",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"metrics-target\",\"tail\":50}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_stats {\"container\":\"prometheus\"}",
+          "quote": "\"restartCount\": 11",
+          "ok": true,
+          "matchedIn": [
+            "get_container_stats {\"container\":\"prometheus\"}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "crash",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "scrape",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 24981,
+        "output_tokens": 1301
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 12.896027241999997,
+      "turns": 4,
+      "retried": false,
+      "trace": [
+        {
+          "turn": 1,
+          "attempt": 1,
+          "stop_reason": "tool_use",
+          "output_tokens": 177,
+          "blocks": [
+            {
+              "type": "text",
+              "chars": 68
+            },
+            {
+              "type": "tool_use",
+              "name": "get_cluster_topology",
+              "chars": 2
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_logs",
+              "chars": 37
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_stats",
+              "chars": 26
+            }
+          ]
+        },
+        {
+          "turn": 2,
+          "attempt": 1,
+          "stop_reason": "tool_use",
+          "output_tokens": 167,
+          "blocks": [
+            {
+              "type": "text",
+              "chars": 123
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_logs",
+              "chars": 40
+            },
+            {
+              "type": "tool_use",
+              "name": "inspect_git_history",
+              "chars": 28
+            }
+          ]
+        },
+        {
+          "turn": 3,
+          "attempt": 1,
+          "stop_reason": "tool_use",
+          "output_tokens": 177,
+          "blocks": [
+            {
+              "type": "text",
+              "chars": 156
+            },
+            {
+              "type": "tool_use",
+              "name": "inspect_git_history",
+              "chars": 24
+            },
+            {
+              "type": "tool_use",
+              "name": "get_container_logs",
+              "chars": 36
+            }
+          ]
+        },
+        {
+          "turn": 4,
+          "attempt": 1,
+          "stop_reason": "tool_use",
+          "output_tokens": 780,
+          "blocks": [
+            {
+              "type": "text",
+              "chars": 155
+            },
+            {
+              "type": "tool_use",
+              "name": "submit_report",
+              "chars": 1481
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "approach": "baseline",
+      "run": 5,
+      "ok": true,
+      "report": {
+        "summary": "Prometheus is crash-looping (restartCount 11, status 'restarting'). Each time it starts, it scrapes the metrics-target at about 01:16:04 and panics inside the text-format parser. Metrics collection is down; the other services (gateway, order-service, postgres) are healthy.",
+        "root_cause": "Prometheus v3.10.0 panics with a slice-bounds error in model/textparse (PromParser.Labels) while parsing the response from the metrics-target's /metrics endpoint. The target is a stock nginx that returns a 5-byte, non-conforming body (HTTP 200, 5 bytes) rather than valid Prometheus exposition format. The parser slices past the end of that malformed payload and crashes the whole process on every scrape, so Prometheus never stays up. This is a scrape-target/parser mismatch, not a resource, OOM or deploy problem; no recent change to the order-service explains it.",
+        "evidence": [
+          {
+            "source": "get_container_logs prometheus",
+            "verbatim_quote": "panic: runtime error: slice bounds out of range [2:1]"
+          },
+          {
+            "source": "get_container_logs prometheus",
+            "verbatim_quote": "github.com/prometheus/prometheus/model/textparse.(*PromParser).Labels(0x2a1bd374a1a0, 0x2a1bd3f0c0c0)"
+          },
+          {
+            "source": "get_container_logs metrics-target",
+            "verbatim_quote": "172.20.0.5 - - [29/Oct/2026:01:16:04 +0000] \"GET /metrics HTTP/1.1\" 200 5 \"-\" \"Prometheus/3.10.0\" \"-\""
+          },
+          {
+            "source": "get_container_stats prometheus",
+            "verbatim_quote": "\"restartCount\": 11"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "source": "get_container_logs prometheus",
+          "quote": "panic: runtime error: slice bounds out of range [2:1]",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"prometheus\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs prometheus",
+          "quote": "github.com/prometheus/prometheus/model/textparse.(*PromParser).Labels(0x2a1bd374a1a0, 0x2a1bd3f0c0c0)",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"prometheus\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_logs metrics-target",
+          "quote": "172.20.0.5 - - [29/Oct/2026:01:16:04 +0000] \"GET /metrics HTTP/1.1\" 200 5 \"-\" \"Prometheus/3.10.0\" \"-\"",
+          "ok": true,
+          "matchedIn": [
+            "get_container_logs {\"container\":\"metrics-target\",\"tail\":1000}"
+          ],
+          "sourceMismatch": false
+        },
+        {
+          "source": "get_container_stats prometheus",
+          "quote": "\"restartCount\": 11",
+          "ok": true,
+          "matchedIn": [
+            "get_container_stats {\"container\":\"prometheus\"}"
+          ],
+          "sourceMismatch": false
+        }
+      ],
+      "grade": {
+        "correct": true,
+        "groups": [
+          {
+            "name": "crash",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "scrape",
+            "matched": true,
+            "negated": 0
+          },
+          {
+            "name": "loc",
+            "matched": true,
+            "negated": 0
+          }
+        ]
+      },
+      "usage": {
+        "input_tokens": 15018,
+        "output_tokens": 606
+      },
+      "models": [
+        "claude-sonnet-5-5"
+      ],
+      "seconds": 11.783000418000011,
+      "truncated": [
+        "postgres",
+        "prometheus"
+      ],
+      "retried": false
+    }
+  ]
+}

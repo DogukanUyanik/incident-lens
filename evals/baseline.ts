@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import Anthropic from "@anthropic-ai/sdk";
 import type { TelemetryClient } from "../packages/agent/src/mcp.js";
-import { addUsage, type TokenUsage } from "../packages/agent/src/agent.js";
+import { createWithRetry, type MessagesClient, type TokenUsage } from "../packages/agent/src/agent.js";
 import { IncidentReport } from "../packages/agent/src/report.js";
 import { CitationVerifier, callLabel, type EvidenceCheck } from "../packages/agent/src/verifier.js";
 
@@ -42,6 +42,8 @@ export interface BaselineResult {
   telemetryChars: number;
   /** Containers whose logs the MCP server's 4000-char cap truncated in this run. */
   truncated: string[];
+  /** True if the call hit max_tokens and was retried once. */
+  retried: boolean;
 }
 
 async function listContainers(): Promise<string[]> {
@@ -62,7 +64,11 @@ function unfence(text: string): string {
   return m ? m[1] : text.trim();
 }
 
-export async function runBaseline(alert: string, telemetry: TelemetryClient): Promise<BaselineResult> {
+export async function runBaseline(
+  alert: string,
+  telemetry: TelemetryClient,
+  client: MessagesClient = new Anthropic()
+): Promise<BaselineResult> {
   const usage: TokenUsage = { input_tokens: 0, output_tokens: 0 };
   const models: string[] = [];
   const verifier = new CitationVerifier();
@@ -70,7 +76,7 @@ export async function runBaseline(alert: string, telemetry: TelemetryClient): Pr
   const containers = await listContainers();
   if (containers.length === 0) {
     const failure = `no containers in compose project "${COMPOSE_PROJECT}"`;
-    return { ok: false, failure, usage, models, telemetryChars: 0, truncated: [] };
+    return { ok: false, failure, usage, models, telemetryChars: 0, truncated: [], retried: false };
   }
 
   // Collect through the MCP tools: the exact text the agent's tool calls return.
@@ -104,19 +110,22 @@ export async function runBaseline(alert: string, telemetry: TelemetryClient): Pr
   }
   const telemetryText = sections.join("\n\n");
 
-  const client = new Anthropic();
-  const response = await client.beta.messages.create({
-    model: MODEL,
-    max_tokens: 16000,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: `Alert: ${alert}\n\nTelemetry:\n\n${telemetryText}` }],
-    ...(THINKING && { thinking: THINKING }),
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
-  });
-  addUsage(usage, response.usage);
-  models.push(response.model);
-  const base = { usage, models, telemetryChars: telemetryText.length, truncated };
+  const attempts = await createWithRetry(
+    client,
+    {
+      model: MODEL,
+      max_tokens: 16000,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: "user", content: `Alert: ${alert}\n\nTelemetry:\n\n${telemetryText}` }],
+      ...(THINKING && { thinking: THINKING }),
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+    },
+    usage,
+    models
+  );
+  const response = attempts[attempts.length - 1];
+  const base = { usage, models, telemetryChars: telemetryText.length, truncated, retried: attempts.length > 1 };
 
   if (response.stop_reason !== "end_turn") {
     const details = response.stop_details ? ` (${JSON.stringify(response.stop_details)})` : "";
