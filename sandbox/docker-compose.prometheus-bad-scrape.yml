@@ -1,0 +1,21 @@
+# Scenario prometheus-bad-scrape-crash (evals/scenarios.json): pinned upstream Prometheus v3.10.0 scraping a target
+# that serves a malformed metrics line (upstream issue prometheus/prometheus#18225, fixed in v3.11.0).
+# metrics-target is our trigger addition, not part of the upstream bug.
+# Merged onto docker-compose.yml so both services join the "sandbox" compose project: the MCP tools and the
+# precondition checks only see containers in that project. reset.sh (--remove-orphans) removes them again.
+services:
+  prometheus:
+    image: prom/prometheus:v3.10.0
+    restart: on-failure
+    volumes:
+      - ./upstream/prometheus-bad-scrape/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    # The image declares /prometheus as a VOLUME; a tmpfs there stops each run from leaving an anonymous volume
+    # behind (reset.sh's --remove-orphans keeps those). A tmpfs is root-owned by default and Prometheus runs as
+    # nobody, so it needs mode=1777 or Prometheus panics at startup on "permission denied" instead.
+    tmpfs:
+      - /prometheus:mode=1777
+
+  metrics-target:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./upstream/prometheus-bad-scrape/metrics-target.conf:/etc/nginx/conf.d/default.conf:ro

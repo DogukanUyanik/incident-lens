@@ -254,6 +254,10 @@ function render(results: Map<string, ScenarioResult>): string {
       "see topology and deploy history, and the reset clears gateway/order-service logs (Phase 4 runs saw stale lines)."
   );
   lines.push(
+    "- `prometheus-bad-scrape-crash`: the metrics-target scrape target (nginx serving the malformed line) is our " +
+      "trigger addition, not part of the upstream bug (prometheus/prometheus#18225, pinned prom/prometheus:v3.10.0)."
+  );
+  lines.push(
     "- Grading is a code-based keyword heuristic per scenario (`evals/scenarios.json` → `grading`): correct iff every " +
       "keyword group matches, with whole-word negation. Check the root causes below by eye."
   );

@@ -248,6 +248,68 @@ test("corrupt-deploy grader classifies the hand-written examples", () => {
   ]);
 });
 
+// ── upstream scenario: prometheus-bad-scrape-crash (prometheus/prometheus#18225) ─────────────────────────────
+
+test("prometheus-bad-scrape-crash grader classifies the hand-written examples", () => {
+  classify("prometheus-bad-scrape-crash", "Prometheus keeps going down and restarting.", [
+    {
+      name: "canonical correct",
+      root_cause:
+        "Prometheus v3.10.0 panics (runtime error: slice bounds out of range) in its text parser while scraping " +
+        "metrics-target, which serves a malformed metrics line; the scrape loop doesn't recover, so the process " +
+        "exits and Docker restarts it.",
+      expected: true,
+    },
+    {
+      name: "correct, phrased differently",
+      root_cause: "Every scrape of the metrics-target target crashes Prometheus, so it crash-loops.",
+      expected: true,
+    },
+    {
+      name: "correct, exporter wording",
+      root_cause: "A malformed line from the exporter makes Prometheus panic and die on each scrape.",
+      expected: true,
+    },
+    {
+      name: "location from the summary only",
+      root_cause: "The text parser panics on the exporter's response and the process exits.",
+      summary: "Prometheus keeps going down and restarting.",
+      expected: true,
+    },
+    {
+      name: "symptom only: restarts",
+      root_cause: "Prometheus keeps going down and is restarted by its on-failure restart policy.",
+      expected: false,
+    },
+    {
+      name: "crash with no cause",
+      root_cause: "Prometheus crashes repeatedly and Docker restarts it.",
+      expected: false,
+    },
+    {
+      name: "wrong cause: OOM",
+      root_cause: "Prometheus is OOM-killed when it reaches its memory limit and is restarted.",
+      expected: false,
+    },
+    {
+      name: "wrong cause: slow start",
+      root_cause: "Prometheus is slow to start and fails its readiness check, so it is restarted.",
+      expected: false,
+    },
+    {
+      name: "negated crash",
+      root_cause:
+        "Prometheus is not crashing; scrapes of metrics-target take too long and the container is restarted.",
+      expected: false,
+    },
+    {
+      name: "wrong cause: config error",
+      root_cause: "An invalid scrape_configs entry makes Prometheus fail to load its config and exit.",
+      expected: false,
+    },
+  ]);
+});
+
 function check(ok: boolean): EvidenceCheck {
   return { source: "s", quote: "q", ok, matchedIn: [], sourceMismatch: false };
 }
