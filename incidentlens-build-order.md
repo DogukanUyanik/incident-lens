@@ -60,47 +60,52 @@ If you stopped here, you have a complete, honest, working project: a real failur
 
 ---
 
-## Phase 7 — Extended thinking, measured
+## Phase 7 — Extended thinking, measured — DEFERRED (cost)
 
-**Build:** turn on thinking for the reasoning step. Handle the signature/thinking-block requirement in the tool loop (verify current API docs for your chosen model — don't assume the old spec's details still hold).
+**Build:** a `--thinking off|on` switch, results stored separately per setting.
 
-**Definition of Done:** re-run the Phase 5 benchmark with thinking on vs. off. You have a real answer to "did this actually help," not an assumption.
+**Definition of Done:** the same scenarios with thinking off vs. on, with the decision rule fixed before measuring ("helps" = ON ≥ OFF + 2 correct runs of 20).
+
+**Status:** planned and designed, not run (about $7 of API spend). On Sonnet 5.5 "off" is `between_tools`, the lowest setting, not literally no thinking.
 
 ---
 
-## Phase 8 — Prompt caching, measured
+## Phase 8 — Prompt caching, measured — PLANNED (after Phase 11)
 
 **Build:** cache breakpoints on the system prompt and tool definitions.
 
-**Definition of Done:** run the agent twice in the same hour, log `cache_read_input_tokens` vs `cache_creation_input_tokens`, and report the real numbers — not an estimated percentage.
+**Definition of Done:** run the agent twice in the same hour, log `cache_read_input_tokens` vs `cache_creation_input_tokens`, and report the real numbers, not an estimated percentage. Keep it to 2-3 runs on one scenario.
 
 ---
 
-## Phase 9 — RAG experiment (the honest version)
+## Phase 9 — RAG experiment — DEFERRED (cost, and a self-written corpus is weak evidence)
 
-**Build:** the runbooks/post-mortems corpus. Two versions to compare: (a) all documents dumped into a cached context block, (b) the hybrid BM25 + dense + RRF pipeline.
+**Original plan:** runbooks/post-mortems corpus; (a) everything in a cached context block vs. (b) BM25 + dense + RRF.
 
-**Definition of Done:** re-run the benchmark once with (a), once with (b). Report whichever one actually wins on your real corpus size — this is the "RAG paradox" experiment, and the result is valuable either way.
+**Cheap variant, if budget allows:** measure retrieval only, without the model. For a set of queries ("prometheus keeps restarting"), does the right runbook appear in the top 3? Compare BM25 alone vs. hybrid, using a local embedding model ($0 API cost). Then run the agent once or twice with the retrieved documents.
+
+**Caveat to state in the README:** the corpus is self-written, so retrieval is artificially easy. The full benchmark comparison was not run.
 
 ---
 
-## Phase 10 — SSE + dashboard, as a shell over what already works
+## Phase 10 — SSE + dashboard, replay-first — NEXT
 
-**Build:** the Next.js dashboard, event stream, chaos trigger buttons — a visual layer over a backend that's already fully working and already benchmarked.
+**Build:** Next.js dashboard, event stream, chaos trigger buttons, as a shell over the working backend. One fixed event schema shared by two modes: **Replay** (default, events from a saved run, costs nothing) and **Live** (real agent run, off unless `ALLOW_LIVE=true`, rate-limited to one run per minute, every live run saves its events as a new replay file). Trigger/reset buttons only run scenarios from `scenarios.json` by id.
 
-**Definition of Done:** trigger a failure from the UI, watch the agent's reasoning stream live, see the final report with clickable citations.
+**Definition of Done:** trigger a failure from the UI, watch the agent's reasoning stream (replay or live), see the final report with clickable citations (tool, container, verified yes/no). Built and tested without API calls; one live run as the final check.
 
 ---
 
 ## Phase 11 — Docker packaging + README
 
-**Build:** `docker-compose.demo.yml` for one-command startup. README with: architecture diagram, benchmark results (real numbers from Phases 4–9), the honest scope note (scenarios were self-authored, plus whatever Phase 6 showed), and the RAG experiment's actual outcome.
+**Build:** `docker-compose.demo.yml` for one-command startup. README with architecture diagram, real benchmark results (Phases 4 to 6, plus 8 if done), the honest scope note, and what was skipped or deferred (7, 9).
 
-**Security hardening (do this before this phase counts as done):** the Phase 2 MCP server talks directly to `/var/run/docker.sock`, which is effectively root-equivalent access — "read-only" up to now has only been enforced by the server's own code (it simply chooses not to call destructive Docker API methods), not by anything structural. That was an acceptable, deliberate trade-off while everything ran locally, single-user, over stdio. It stops being acceptable once this is containerized or exposed beyond your own machine. Put a `docker-socket-proxy` (e.g. `tecnativa/docker-socket-proxy`, with only `CONTAINERS=1` enabled) between the MCP server and the socket, so read-only is enforced at the network/proxy level, not just by code convention. Verify it by confirming a destructive call (e.g. a container stop) genuinely fails through the proxy, not just that your own tools happen not to send one.
+**Security hardening (do this before this phase counts as done):** the MCP server talks directly to `/var/run/docker.sock`, which is effectively root-equivalent. "Read-only" has only been enforced by the server's own code. Put a `docker-socket-proxy` (`tecnativa/docker-socket-proxy`, only `CONTAINERS=1`) between the MCP server and the socket. Verify that a destructive call (e.g. a container stop) genuinely fails through the proxy.
 
-**Definition of Done:** someone else can clone the repo, run one command, and see the whole thing work. The MCP server's Docker access goes through the socket proxy, not the raw socket, and this is verified, not assumed.
+**Definition of Done:** someone else can clone the repo, run one command, and see the whole thing work, with Docker access going through the proxy, verified and not assumed.
+
 ---
 
-## What changed vs. the original phase order
+## Order from here
 
-Nothing was cut. Phases 1–3 now front-load the parts that make the whole system provably work (sandbox → tools → agent loop → citations) before any optimization layer gets added. Everything from Phase 4 onward is additive — each one has its own measurable "did this help" test, so you're never trusting an unmeasured claim, and you always have a working, demoable system at every stopping point.
+10 → 11 → 8 → (9, cheap variant) → (7, if budget appears)
