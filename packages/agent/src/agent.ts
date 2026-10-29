@@ -7,6 +7,13 @@ type BetaMessageParam = Anthropic.Beta.Messages.BetaMessageParam;
 type BetaToolResultBlockParam = Anthropic.Beta.Messages.BetaToolResultBlockParam;
 type BetaToolUseBlock = Anthropic.Beta.Messages.BetaToolUseBlock;
 type BetaUsage = Anthropic.Beta.Messages.BetaUsage;
+type BetaMessage = Anthropic.Beta.Messages.BetaMessage;
+type MessageCreateParams = Anthropic.Beta.Messages.MessageCreateParamsNonStreaming;
+
+/** The one client method the agent and the baseline use; tests pass a stub. */
+export interface MessagesClient {
+  beta: { messages: { create(params: MessageCreateParams): Promise<BetaMessage> } };
+}
 
 export const MAX_TURNS = 10;
 const DEFAULT_MODEL = "claude-sonnet-5-5";
@@ -28,6 +35,16 @@ export interface TokenUsage {
   output_tokens: number;
 }
 
+/** One API attempt: a turn has two when its first attempt hit max_tokens and was retried. */
+export interface TurnTrace {
+  turn: number;
+  attempt: number;
+  stop_reason: string | null;
+  output_tokens: number;
+  /** text/thinking: chars of text; tool_use: tool name and chars of its JSON input. */
+  blocks: { type: string; name?: string; chars?: number }[];
+}
+
 export interface AgentResult {
   ok: boolean;
   turns: number;
@@ -38,6 +55,9 @@ export interface AgentResult {
   usage: TokenUsage;
   /** Models that actually served the run's responses (differs from the requested model only on a fallback). */
   models: string[];
+  trace: TurnTrace[];
+  /** True if any turn hit max_tokens and was retried. */
+  retried: boolean;
 }
 
 /**
@@ -53,11 +73,50 @@ export function addUsage(total: TokenUsage, usage: BetaUsage): void {
   }
 }
 
+/**
+ * Send one request; if it stops on max_tokens, send the identical request once more. The truncated response is
+ * never added to the history, so the retry sees exactly what the first attempt saw. Usage and models of every
+ * attempt are recorded. Returns all attempts; the last one is the response to use.
+ */
+export async function createWithRetry(
+  client: MessagesClient,
+  params: MessageCreateParams,
+  usage: TokenUsage,
+  models: string[]
+): Promise<BetaMessage[]> {
+  const attempts: BetaMessage[] = [];
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const response = await client.beta.messages.create(params);
+    addUsage(usage, response.usage);
+    if (!models.includes(response.model)) models.push(response.model);
+    attempts.push(response);
+    if (response.stop_reason !== "max_tokens") break;
+    if (attempt === 1) console.log("  (max_tokens: retrying the same request once)");
+  }
+  return attempts;
+}
+
+function traceEntry(turn: number, attempt: number, response: BetaMessage): TurnTrace {
+  const out: TokenUsage = { input_tokens: 0, output_tokens: 0 };
+  addUsage(out, response.usage);
+  const blocks = response.content.map((b) => {
+    if (b.type === "text") return { type: b.type, chars: b.text.length };
+    if (b.type === "thinking") return { type: b.type, chars: b.thinking.length };
+    if (b.type === "tool_use") return { type: b.type, name: b.name, chars: JSON.stringify(b.input ?? {}).length };
+    return { type: b.type };
+  });
+  return { turn, attempt, stop_reason: response.stop_reason, output_tokens: out.output_tokens, blocks };
+}
+
 function printBlock(prefix: string, text: string) {
   console.log(text.split("\n").map((line) => `${prefix}${line}`).join("\n"));
 }
 
-export async function investigate(alert: string, telemetry: TelemetryClient): Promise<AgentResult> {
+export async function investigate(
+  alert: string,
+  telemetry: TelemetryClient,
+  client: MessagesClient = new Anthropic()
+): Promise<AgentResult> {
   const model = process.env.INCIDENTLENS_MODEL ?? DEFAULT_MODEL;
   // Thinking is deliberately off in Phase 3 (Phase 7 measures it). Only Claude Sonnet 5.5 can turn it
   // off (`between_tools`); other current models reject that value, so for them we fall back to their default.
@@ -66,28 +125,35 @@ export async function investigate(alert: string, telemetry: TelemetryClient): Pr
     console.warn(`! model ${model}: thinking cannot be turned off here; the model's default thinking applies`);
   }
 
-  const client = new Anthropic();
   const verifier = new CitationVerifier();
   const tools = [...telemetry.tools, submitReportTool];
   const messages: BetaMessageParam[] = [{ role: "user", content: `Alert: ${alert}` }];
   let lastChecks: EvidenceCheck[] | undefined;
   const usage: TokenUsage = { input_tokens: 0, output_tokens: 0 };
   const models: string[] = [];
+  const trace: TurnTrace[] = [];
+  let retried = false;
 
   for (let turn = 1; turn <= MAX_TURNS; turn++) {
     console.log(`\n── turn ${turn}/${MAX_TURNS} ──`);
-    const response = await client.beta.messages.create({
-      model,
-      max_tokens: 16000,
-      system: SYSTEM_PROMPT,
-      tools,
-      messages,
-      ...(thinking && { thinking }),
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-    });
-    addUsage(usage, response.usage);
-    if (!models.includes(response.model)) models.push(response.model);
+    const attempts = await createWithRetry(
+      client,
+      {
+        model,
+        max_tokens: 16000,
+        system: SYSTEM_PROMPT,
+        tools,
+        messages,
+        ...(thinking && { thinking }),
+        betas: ["server-side-fallback-2026-07-01"],
+        fallbacks: "default",
+      },
+      usage,
+      models
+    );
+    attempts.forEach((r, i) => trace.push(traceEntry(turn, i + 1, r)));
+    if (attempts.length > 1) retried = true;
+    const response = attempts[attempts.length - 1];
 
     // Append-only history: the assistant turn goes back exactly as received.
     messages.push({ role: "assistant", content: response.content });
@@ -112,6 +178,8 @@ export async function investigate(alert: string, telemetry: TelemetryClient): Pr
         failure: `stopped with stop_reason=${response.stop_reason}${details}`,
         usage,
         models,
+        trace,
+        retried,
       };
     }
 
@@ -168,7 +236,7 @@ export async function investigate(alert: string, telemetry: TelemetryClient): Pr
       });
     }
 
-    if (accepted) return { ok: true, turns: turn, ...accepted, usage, models };
+    if (accepted) return { ok: true, turns: turn, ...accepted, usage, models, trace, retried };
     messages.push({ role: "user", content: results });
   }
 
@@ -179,5 +247,7 @@ export async function investigate(alert: string, telemetry: TelemetryClient): Pr
     failure: `no verified report after ${MAX_TURNS} turns`,
     usage,
     models,
+    trace,
+    retried,
   };
 }

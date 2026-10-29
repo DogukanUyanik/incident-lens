@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
 import { connectTelemetry, type TelemetryClient } from "../packages/agent/src/mcp.js";
-import { investigate, MAX_TURNS, type TokenUsage } from "../packages/agent/src/agent.js";
+import { investigate, MAX_TURNS, type TokenUsage, type TurnTrace } from "../packages/agent/src/agent.js";
 import { SUBMIT_REPORT, type IncidentReport } from "../packages/agent/src/report.js";
 import type { EvidenceCheck } from "../packages/agent/src/verifier.js";
 import { MODEL, runBaseline } from "./baseline.js";
@@ -16,6 +16,9 @@ const RESULTS_DIR = path.join(EVALS_DIR, "results");
 const RESULTS_MD = path.join(EVALS_DIR, "results.md");
 
 type Approach = "agent" | "baseline";
+
+/** Date the single max_tokens retry was added to the agent and the baseline. */
+const MAX_TOKENS_RETRY_SINCE = "2026-10-29";
 
 interface RunRecord {
   approach: Approach;
@@ -30,6 +33,10 @@ interface RunRecord {
   seconds: number;
   turns?: number;
   truncated?: string[];
+  /** The call (baseline) or some turn (agent) hit max_tokens and was retried once. */
+  retried?: boolean;
+  /** Agent only: one entry per API attempt. */
+  trace?: TurnTrace[];
 }
 
 /** One scenario's results, persisted as evals/results/<id>.json. */
@@ -119,6 +126,8 @@ async function benchmarkScenario(s: Scenario, telemetry: TelemetryClient): Promi
       models: ar?.models ?? [],
       seconds: a.seconds,
       turns: ar?.turns,
+      retried: ar?.retried,
+      trace: ar?.trace,
     });
 
     console.log(`\n=================== [${s.id}] baseline run ${i}/${n} ===================`);
@@ -137,6 +146,7 @@ async function benchmarkScenario(s: Scenario, telemetry: TelemetryClient): Promi
       models: br?.models ?? [],
       seconds: b.seconds,
       truncated: br?.truncated,
+      retried: br?.retried,
     });
 
     for (const r of result.runs.slice(-2)) {
@@ -256,6 +266,11 @@ function render(results: Map<string, ScenarioResult>): string {
   lines.push(
     "- `prometheus-bad-scrape-crash`: the metrics-target scrape target (nginx serving the malformed line) is our " +
       "trigger addition, not part of the upstream bug (prometheus/prometheus#18225, pinned prom/prometheus:v3.10.0)."
+  );
+  const retriedRuns = [...results.values()].flatMap((r) => r.runs).filter((r) => r.retried).length;
+  lines.push(
+    `- max_tokens: one retry per turn (agent and baseline) since ${MAX_TOKENS_RETRY_SINCE}; earlier runs had none. ` +
+      `Retried runs: ${retriedRuns}.`
   );
   lines.push(
     "- Grading is a code-based keyword heuristic per scenario (`evals/scenarios.json` → `grading`): correct iff every " +
