@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "bench": "tsx run-benchmark.ts",
-    "test": "tsx --test grader.test.ts scenarios.test.ts agent-retry.test.ts",
+    "test": "tsx --test grader.test.ts scenarios.test.ts agent-retry.test.ts agent-events.test.ts",
     "check": "tsx check-scenario.ts",
     "typecheck": "tsc --noEmit"
   },

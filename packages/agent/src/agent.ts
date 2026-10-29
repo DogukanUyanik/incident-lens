@@ -45,6 +45,21 @@ export interface TurnTrace {
   blocks: { type: string; name?: string; chars?: number }[];
 }
 
+/**
+ * What the loop reports to an optional listener while it runs (the dashboard's event stream). Payloads are copies,
+ * so a listener can't change the run.
+ */
+export type AgentEvent =
+  | { type: "turn_start"; turn: number; max_turns: number }
+  | { type: "retry"; turn: number; reason: "max_tokens" }
+  | { type: "assistant_text"; turn: number; text: string }
+  | { type: "thinking"; turn: number; text: string; chars: number }
+  | { type: "tool_call"; turn: number; id: string; name: string; args: Record<string, unknown> }
+  | { type: "tool_result"; turn: number; id: string; name: string; is_error: boolean; text: string }
+  | { type: "report_submitted"; turn: number; report: unknown }
+  | { type: "verification"; turn: number; ok: boolean; checks: EvidenceCheck[]; reason?: string }
+  | { type: "report_final"; report: IncidentReport; checks: EvidenceCheck[]; turns: number; usage: TokenUsage };
+
 export interface AgentResult {
   ok: boolean;
   turns: number;
@@ -115,8 +130,16 @@ function printBlock(prefix: string, text: string) {
 export async function investigate(
   alert: string,
   telemetry: TelemetryClient,
-  client: MessagesClient = new Anthropic()
+  client: MessagesClient = new Anthropic(),
+  onEvent: (event: AgentEvent) => void = () => {}
 ): Promise<AgentResult> {
+  const emit = (event: AgentEvent) => {
+    try {
+      onEvent(structuredClone(event));
+    } catch {
+      // A listener must never change the run.
+    }
+  };
   const model = process.env.INCIDENTLENS_MODEL ?? DEFAULT_MODEL;
   // Thinking is deliberately off in Phase 3 (Phase 7 measures it). Only Claude Sonnet 5.5 can turn it
   // off (`between_tools`); other current models reject that value, so for them we fall back to their default.
@@ -136,6 +159,7 @@ export async function investigate(
 
   for (let turn = 1; turn <= MAX_TURNS; turn++) {
     console.log(`\n── turn ${turn}/${MAX_TURNS} ──`);
+    emit({ type: "turn_start", turn, max_turns: MAX_TURNS });
     const attempts = await createWithRetry(
       client,
       {
@@ -152,14 +176,23 @@ export async function investigate(
       models
     );
     attempts.forEach((r, i) => trace.push(traceEntry(turn, i + 1, r)));
-    if (attempts.length > 1) retried = true;
+    if (attempts.length > 1) {
+      retried = true;
+      emit({ type: "retry", turn, reason: "max_tokens" });
+    }
     const response = attempts[attempts.length - 1];
 
     // Append-only history: the assistant turn goes back exactly as received.
     messages.push({ role: "assistant", content: response.content });
 
     for (const block of response.content) {
-      if (block.type === "text" && block.text.trim()) printBlock("  claude │ ", block.text.trim());
+      if (block.type === "text" && block.text.trim()) {
+        printBlock("  claude │ ", block.text.trim());
+        emit({ type: "assistant_text", turn, text: block.text });
+      }
+      if (block.type === "thinking") {
+        emit({ type: "thinking", turn, text: block.thinking, chars: block.thinking.length });
+      }
     }
 
     if (response.stop_reason === "end_turn") {
@@ -191,8 +224,10 @@ export async function investigate(
       const args = (use.input ?? {}) as Record<string, unknown>;
       const label = callLabel(use.name, args);
       console.log(`  → ${label}`);
+      emit({ type: "tool_call", turn, id: use.id, name: use.name, args });
       const { text, isError } = await telemetry.callTool(use.name, args);
       verifier.record(use.name, args, text, isError);
+      emit({ type: "tool_result", turn, id: use.id, name: use.name, is_error: isError, text });
       printBlock(isError ? "    [error] │ " : "            │ ", text);
       results.push({ type: "tool_result", tool_use_id: use.id, content: text, is_error: isError });
     }
@@ -200,9 +235,11 @@ export async function investigate(
     let accepted: { report: IncidentReport; checks: EvidenceCheck[] } | undefined;
     for (const use of toolUses.filter((u) => u.name === SUBMIT_REPORT)) {
       console.log(`  → ${SUBMIT_REPORT}`);
+      emit({ type: "report_submitted", turn, report: use.input });
       const parsed = IncidentReport.safeParse(use.input);
       if (!parsed.success) {
         console.log(`    rejected: invalid report shape`);
+        emit({ type: "verification", turn, ok: false, checks: [], reason: "invalid report shape" });
         results.push({
           type: "tool_result",
           tool_use_id: use.id,
@@ -214,6 +251,7 @@ export async function investigate(
 
       const { ok, checks } = verifier.verify(parsed.data);
       lastChecks = checks;
+      emit({ type: "verification", turn, ok, checks });
       for (const c of checks) {
         console.log(`    ${c.ok ? "✔" : "✘"} ${JSON.stringify(c.quote)}${c.ok ? "" : ` — ${c.reason}`}`);
       }
@@ -236,7 +274,10 @@ export async function investigate(
       });
     }
 
-    if (accepted) return { ok: true, turns: turn, ...accepted, usage, models, trace, retried };
+    if (accepted) {
+      emit({ type: "report_final", report: accepted.report, checks: accepted.checks, turns: turn, usage });
+      return { ok: true, turns: turn, ...accepted, usage, models, trace, retried };
+    }
     messages.push({ role: "user", content: results });
   }
 

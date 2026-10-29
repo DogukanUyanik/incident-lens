@@ -11,7 +11,7 @@ with verified citations and a measured benchmark against a naive baseline.
 Full phase plan lives in `build-order.md`. Always check which phase is currently active
 before doing any work — do not implement later phases early, even if it seems convenient.
 
-**Current phase: Phase 7**
+**Current phase: Phase 10**
 
 ## Workflow Rules
 
@@ -64,6 +64,6 @@ Do not "fix" them.
 - `packages/mcp-server/src/docker.ts` (read-only guarantee; only list/inspect/logs/stats)
 - Never commit `.env` files or `sandbox/.deploy-history/`
 
-## Definition of Done — Phase 7
+## Definition of Done — Phase 10
 
-(Copy from build-order.md Phase 7.)
+(Copy from build-order.md Phase 10.)
