@@ -96,3 +96,12 @@ test("no browser-exposed environment variables and no server modules in client c
     }
   }
 });
+
+test("React effects use a block body, so a value returned by a DOM call is never taken as the cleanup", () => {
+  // Regression: `useEffect(() => el.scrollIntoView(...))` crashed the page in Chromium 155 once the effect re-ran.
+  const dir = path.join("app", "_components");
+  for (const f of readdirSync(dir)) {
+    const src = readFileSync(path.join(dir, f), "utf8");
+    assert.ok(!/useEffect\(\s*\(\)\s*=>\s*[^{\s]/.test(src), `${f}: useEffect with an expression body`);
+  }
+});

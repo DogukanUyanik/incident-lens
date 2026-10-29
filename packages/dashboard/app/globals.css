@@ -1,0 +1,533 @@
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --border: #dde1e7;
+  --text: #1c2430;
+  --muted: #667085;
+  --accent: #2f5fd0;
+  --accent-text: #ffffff;
+  --ok: #157f3c;
+  --ok-bg: #e6f4ea;
+  --bad: #b42318;
+  --bad-bg: #fdecea;
+  --warn: #8a5a00;
+  --warn-bg: #fff4d6;
+  --recon: #6b3fa0;
+  --recon-bg: #f1eafb;
+  --live: #0b6e8a;
+  --live-bg: #e3f4f8;
+  --mark: #ffe58a;
+  --code-bg: #f1f3f6;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1318;
+    --surface: #171c23;
+    --border: #2a313b;
+    --text: #e4e8ee;
+    --muted: #8f9aaa;
+    --accent: #6d95f2;
+    --accent-text: #0f1318;
+    --ok: #5bc282;
+    --ok-bg: #12301f;
+    --bad: #f0857a;
+    --bad-bg: #3a1714;
+    --warn: #e8bf62;
+    --warn-bg: #352a10;
+    --recon: #c3a2ef;
+    --recon-bg: #2a1f3a;
+    --live: #6fc8e0;
+    --live-bg: #0f2c35;
+    --mark: #6b5a1a;
+    --code-bg: #1f252e;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+code,
+pre {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+h1 {
+  font-size: 17px;
+  margin: 0;
+}
+
+h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: 18px 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+h3 {
+  font-size: 13px;
+  margin: 14px 0 4px;
+}
+
+button,
+select {
+  font: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+.linklike {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: 12px;
+}
+
+.warn {
+  color: var(--warn);
+}
+
+.label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-right: 8px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+}
+
+/* layout */
+
+.app {
+  display: grid;
+  /* minmax(0, …): let the columns shrink below their content's width instead of overflowing the page. */
+  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  min-height: 100vh;
+}
+
+.topbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 10px 18px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.status {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.mode {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.mode button {
+  border: none;
+  border-radius: 0;
+  padding: 5px 16px;
+}
+
+.mode button.on {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.sidebar {
+  padding: 4px 16px 24px;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  overflow-y: auto;
+}
+
+.main {
+  padding: 4px 20px 24px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 20px;
+  align-content: start;
+}
+
+.panel {
+  min-width: 0;
+}
+
+@media (max-width: 1100px) {
+  .main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .app {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sidebar {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+/* scenario picker */
+
+.scenarios {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.scenario {
+  width: 100%;
+  text-align: left;
+  display: grid;
+  padding: 8px 10px;
+}
+
+.scenario.on {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.scenario-id {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.alert {
+  margin-top: 12px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--warn-bg);
+}
+
+.sidebar select {
+  width: 100%;
+}
+
+.row select {
+  width: auto;
+}
+
+/* badges and notices */
+
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  margin-left: 6px;
+  vertical-align: 1px;
+}
+
+.badge-ok {
+  color: var(--ok);
+  background: var(--ok-bg);
+  border-color: transparent;
+}
+.badge-bad {
+  color: var(--bad);
+  background: var(--bad-bg);
+  border-color: transparent;
+}
+.badge-warn {
+  color: var(--warn);
+  background: var(--warn-bg);
+  border-color: transparent;
+}
+.badge-recon {
+  color: var(--recon);
+  background: var(--recon-bg);
+  border-color: transparent;
+}
+.badge-live {
+  color: var(--live);
+  background: var(--live-bg);
+  border-color: transparent;
+}
+
+.notice {
+  margin-top: 14px;
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--live-bg);
+}
+
+.empty {
+  padding: 18px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+}
+
+.pulse {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* event stream */
+
+.stream {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.ev {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.ev-start {
+  display: grid;
+  gap: 4px;
+}
+
+.note {
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: var(--recon-bg);
+}
+
+.ev-turn {
+  margin-top: 8px;
+  font-weight: 600;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 2px;
+}
+
+.ev-text {
+  white-space: pre-wrap;
+}
+
+.ev-note {
+  font-style: italic;
+  white-space: pre-wrap;
+}
+
+.ev-call .arrow {
+  color: var(--accent);
+}
+
+.ev-cited {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.ev-result {
+  background: var(--code-bg);
+}
+
+.args {
+  color: var(--muted);
+}
+
+.ev-ok {
+  color: var(--ok);
+  background: var(--ok-bg);
+  border-color: transparent;
+}
+
+.ev-bad,
+.ev-error {
+  color: var(--bad);
+  background: var(--bad-bg);
+  border-color: transparent;
+}
+
+.ev-warn {
+  color: var(--warn);
+  background: var(--warn-bg);
+  border-color: transparent;
+}
+
+.ev-end {
+  margin-top: 8px;
+}
+
+.tool-output,
+.script-log,
+.quote {
+  margin: 6px 0 0;
+  padding: 8px;
+  border-radius: 5px;
+  background: var(--code-bg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+mark {
+  background: var(--mark);
+  color: inherit;
+}
+
+/* report */
+
+.report p {
+  margin: 0 0 6px;
+}
+
+.citations {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0;
+  display: grid;
+  /* minmax(0, …): a long one-line quote preview must be cut with an ellipsis, not widen the page. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+
+.citation {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.citation.open {
+  border-color: var(--accent);
+}
+
+.citation-head {
+  width: 100%;
+  border: none;
+  background: none;
+  text-align: left;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.citation-head .badge {
+  margin-left: 0;
+}
+
+.container {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--code-bg);
+}
+
+.quote-preview {
+  flex-basis: 100%;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.citation-body {
+  padding: 0 10px 10px;
+}
+
+.citation-body dl {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 4px 10px;
+  margin: 0 0 8px;
+}
+
+.citation-body dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.citation-body dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* script output */
+
+.script-head {
+  font-size: 12.5px;
+}
+
+.script-log {
+  max-height: 240px;
+  font-size: 11.5px;
+}
