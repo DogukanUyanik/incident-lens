@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { RunEvent, SCHEMA_VERSION } from "../lib/events.js";
-import { isReplayName, listReplays, loadReplay, parseReplay, replayDelays, streamReplay } from "../lib/replay.js";
+import { RunEvent, SCHEMA_VERSION } from "../lib/events";
+import { isReplayName, listReplays, loadReplay, parseReplay, replayDelays, streamReplay } from "../lib/replay";
 
 const ev = (seq: number, t_ms: number | null, body: Record<string, unknown>) =>
   ({ v: SCHEMA_VERSION, run_id: "r", seq, t_ms, ...body }) as RunEvent;

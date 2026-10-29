@@ -1,25 +1,10 @@
-import assert from "node:assert/strict";
-import type { MessagesClient } from "../../agent/src/agent.js";
-import type { TelemetryClient } from "../../agent/src/mcp.js";
+import { message, stubClient, stubTelemetry as runnerTelemetry } from "../runner/stub";
 
-/** Scripted model and telemetry for running the real agent loop with no API call. */
+/** Test helpers on top of the runner's stub (runner/stub.ts). */
 
-type BetaMessage = Awaited<ReturnType<MessagesClient["beta"]["messages"]["create"]>>;
+export { message, stubClient };
 
 export const LOG_LINE = "[orders] acquired client (total=10 idle=0 waiting=5)";
-
-export function message(stop_reason: string, content: unknown[], output_tokens = 100): BetaMessage {
-  return {
-    id: "msg",
-    type: "message",
-    role: "assistant",
-    model: "stub-model",
-    content,
-    stop_reason,
-    stop_sequence: null,
-    usage: { input_tokens: 100, output_tokens },
-  } as unknown as BetaMessage;
-}
 
 export const callLogs = (id = "t1") =>
   message("tool_use", [
@@ -41,20 +26,4 @@ export const submit = (quote = LOG_LINE) =>
     },
   ]);
 
-export function stubClient(responses: BetaMessage[]): MessagesClient {
-  return {
-    beta: {
-      messages: {
-        create: async () => {
-          const next = responses.shift();
-          assert.ok(next, "stub client: more calls than scripted responses");
-          return next;
-        },
-      },
-    },
-  };
-}
-
-export function stubTelemetry(text = `${LOG_LINE}\n`): TelemetryClient {
-  return { tools: [], callTool: async () => ({ text, isError: false }), close: async () => {} };
-}
+export const stubTelemetry = (text = `${LOG_LINE}\n`) => runnerTelemetry(text);

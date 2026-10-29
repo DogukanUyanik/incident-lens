@@ -1,8 +1,8 @@
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { pickRun, reconstruct, toNdjson, type StoredResult } from "../lib/reconstruct.js";
-import { parseReplay, REPLAYS_DIR } from "../lib/replay.js";
+import { pickRun, reconstruct, toNdjson, type StoredResult } from "../lib/reconstruct";
+import { parseReplay, REPLAYS_DIR } from "../lib/replay";
 
 /**
  * Writes replays/<scenario>.reconstructed.ndjson for every scenario with stored benchmark results, from the first

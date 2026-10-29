@@ -1,10 +1,9 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { RunEvent } from "./events.js";
+import { RunEvent } from "./events";
+import { REPLAYS_DIR } from "./paths";
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-export const REPLAYS_DIR = path.resolve(here, "../replays");
+export { REPLAYS_DIR };
 
 /** Replay names the server accepts: a file directly in replays/ or replays/live/, nothing else. */
 const REPLAY_NAME = /^(live\/)?[a-z0-9][a-z0-9-]*(\.[a-z0-9-]+)*\.ndjson$/;

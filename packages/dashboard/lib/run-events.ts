@@ -1,5 +1,5 @@
 import type { AgentEvent, AgentResult } from "../../agent/src/agent.js";
-import { SCHEMA_VERSION, type EventBody, type RunEvent } from "./events.js";
+import { SCHEMA_VERSION, type EventBody, type RunEvent } from "./events";
 
 export interface RunMeta {
   run_id: string;

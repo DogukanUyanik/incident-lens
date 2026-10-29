@@ -3,3 +3,9 @@ node_modules/
 dist/
 *.log
 sandbox/.deploy-history/
+
+# dashboard: Next.js build output and server-only state (live rate limit)
+.next/
+packages/dashboard/.state/
+packages/dashboard/next-env.d.ts
+*.tsbuildinfo

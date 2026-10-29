@@ -1,7 +1,7 @@
 import { MAX_TURNS, type TokenUsage, type TurnTrace } from "../../agent/src/agent.js";
 import type { IncidentReport } from "../../agent/src/report.js";
 import type { EvidenceCheck } from "../../agent/src/verifier.js";
-import { SCHEMA_VERSION, type EventBody, type RunEvent } from "./events.js";
+import { SCHEMA_VERSION, type EventBody, type RunEvent } from "./events";
 
 /** The fields of evals/results/<id>.json this needs (written by evals/run-benchmark.ts). */
 export interface StoredRun {

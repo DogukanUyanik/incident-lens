@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { RunEvent } from "../lib/events.js";
-import { pickRun, reconstruct, toNdjson, type StoredResult, type StoredRun } from "../lib/reconstruct.js";
-import { parseReplay, REPLAYS_DIR } from "../lib/replay.js";
+import type { RunEvent } from "../lib/events";
+import { pickRun, reconstruct, toNdjson, type StoredResult, type StoredRun } from "../lib/reconstruct";
+import { parseReplay, REPLAYS_DIR } from "../lib/replay";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const RESULTS_DIR = path.resolve(here, "../../../evals/results");

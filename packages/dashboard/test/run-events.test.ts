@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { investigate, MAX_TURNS } from "../../agent/src/agent.js";
-import type { RunEvent } from "../lib/events.js";
-import { parseReplay } from "../lib/replay.js";
-import { toNdjson } from "../lib/reconstruct.js";
-import { createRecorder } from "../lib/run-events.js";
-import { callLogs, message, stubClient, stubTelemetry, submit } from "./stub.js";
+import type { RunEvent } from "../lib/events";
+import { parseReplay } from "../lib/replay";
+import { toNdjson } from "../lib/reconstruct";
+import { createRecorder } from "../lib/run-events";
+import { callLogs, message, stubClient, stubTelemetry, submit } from "./stub";
 
 const META = {
   run_id: "run-1",
