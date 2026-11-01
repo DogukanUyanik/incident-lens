@@ -96,13 +96,15 @@ If you stopped here, you have a complete, honest, working project: a real failur
 
 ---
 
-## Phase 11 — Docker packaging + README
+## Phase 11 — Clone-and-run instructions + README
 
-**Build:** `docker-compose.demo.yml` for one-command startup. README with architecture diagram, real benchmark results (Phases 4 to 6, plus 8 if done), the honest scope note, and what was skipped or deferred (7, 9).
+**Changed scope (2026-11-02):** the original plan was a `docker-compose.demo.yml` for one-command startup, with a `docker-socket-proxy` (`tecnativa/docker-socket-proxy`, only `CONTAINERS=1`) between the MCP server and the socket. Both were dropped. The goal is now that someone can do what I can do on my own machine, by following the README, with no code changes.
 
-**Security hardening (do this before this phase counts as done):** the MCP server talks directly to `/var/run/docker.sock`, which is effectively root-equivalent. "Read-only" has only been enforced by the server's own code. Put a `docker-socket-proxy` (`tecnativa/docker-socket-proxy`, only `CONTAINERS=1`) between the MCP server and the socket. Verify that a destructive call (e.g. a container stop) genuinely fails through the proxy.
+**Build:** README Quick start with requirements (Linux only), replay and live steps, cost per live run, troubleshooting, the findings and limits, and what was skipped or deferred (7, 9). `packages/agent/.env.example` for the API key.
 
-**Definition of Done:** someone else can clone the repo, run one command, and see the whole thing work, with Docker access going through the proxy, verified and not assumed.
+**Accepted limit:** there is no proxy, so host runs use `/var/run/docker.sock` directly, which is effectively root-equivalent, and "read-only" is enforced only by the server's own code. The README states this.
+
+**Definition of Done:** from a clean copy of the repo, following the README literally: a replay plays in the dashboard, the sandbox starts and resets, and a stub live run (`AGENT_STUB=1`) streams and saves a replay file, without spending API credit. Someone with their own API key can do a real live run with the same steps.
 
 ---
 
