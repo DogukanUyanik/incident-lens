@@ -1,0 +1,16 @@
+# Replay-only demo: no API key, no Docker socket, no volumes. See README.md.
+name: incidentlens-demo
+
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: packages/dashboard/Dockerfile
+    # Inside the container it must bind 0.0.0.0 to be reachable; the host side stays loopback only.
+    command: ["npx", "next", "start", "-H", "0.0.0.0", "-p", "3000"]
+    init: true
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      ALLOW_LIVE: "false"
+      REPLAY_ONLY: "true"

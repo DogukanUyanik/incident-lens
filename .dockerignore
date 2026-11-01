@@ -1,0 +1,10 @@
+**/.env
+**/.env.*
+**/node_modules
+**/.next
+**/*.tsbuildinfo
+**/*.log
+.git
+.claude
+packages/dashboard/.state
+sandbox/.deploy-history

@@ -102,7 +102,13 @@ If you stopped here, you have a complete, honest, working project: a real failur
 
 **Security hardening (do this before this phase counts as done):** the MCP server talks directly to `/var/run/docker.sock`, which is effectively root-equivalent. "Read-only" has only been enforced by the server's own code. Put a `docker-socket-proxy` (`tecnativa/docker-socket-proxy`, only `CONTAINERS=1`) between the MCP server and the socket. Verify that a destructive call (e.g. a container stop) genuinely fails through the proxy.
 
-**Definition of Done:** someone else can clone the repo, run one command, and see the whole thing work, with Docker access going through the proxy, verified and not assumed.
+**Original Definition of Done (replaced, see below):** someone else can clone the repo, run one command, and see the whole thing work, with Docker access going through the proxy, verified and not assumed.
+
+**Changed scope (2026-11-01):** the one-command demo is replay-only, and the proxy was not added. The demo container runs only the dashboard, with no Docker socket, no Docker CLI, no API key and no volumes. No socket is stronger than a filtered socket, and nothing in the container would use a proxy. Trigger/reset can't go through the proxy anyway, because `docker compose up` needs POST.
+
+**Not solved by this:** host runs (the MCP server started by the agent CLI, evals or live mode) still use `/var/run/docker.sock` directly, and "read-only" there is enforced only by the server's code. Using a proxy for real would mean running live mode in a container, which is a separate piece of work.
+
+**Definition of Done:** someone else can clone the repo, run `docker compose -f docker-compose.demo.yml up --build`, open http://127.0.0.1:3000 and play a saved replay, with no API key. The container is verified to have no Docker socket and no mounts, and trigger, reset and live return 403. The README states the host-run socket limit.
 
 ---
 

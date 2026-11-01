@@ -209,15 +209,21 @@ export function Dashboard() {
             </div>
 
             <h2>Sandbox</h2>
-            <div className="row">
-              <button onClick={() => void runScript("trigger")} disabled={sandboxBusy}>
-                Trigger
-              </button>
-              <button onClick={() => void runScript("reset")} disabled={sandboxBusy}>
-                Reset
-              </button>
-            </div>
-            <p className="muted small">Runs the scenario&apos;s own chaos script against the local sandbox. No API calls.</p>
+            {config?.replay_only ? (
+              <p className="muted small">Trigger and reset are not available in the Docker demo.</p>
+            ) : (
+              <>
+                <div className="row">
+                  <button onClick={() => void runScript("trigger")} disabled={sandboxBusy}>
+                    Trigger
+                  </button>
+                  <button onClick={() => void runScript("reset")} disabled={sandboxBusy}>
+                    Reset
+                  </button>
+                </div>
+                <p className="muted small">Runs the scenario&apos;s own chaos script against the local sandbox. No API calls.</p>
+              </>
+            )}
 
             {mode === "replay" ? (
               <>
@@ -271,8 +277,12 @@ export function Dashboard() {
           </>
         )}
 
-        <h2>Script output</h2>
-        <ScriptPanel run={script} />
+        {!config?.replay_only && (
+          <>
+            <h2>Script output</h2>
+            <ScriptPanel run={script} />
+          </>
+        )}
       </aside>
 
       <main className="main">

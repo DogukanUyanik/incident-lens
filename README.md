@@ -6,18 +6,39 @@ deploy history and topology through four read-only MCP tools, and it chooses whi
 arguments. It is benchmarked against a naive baseline that gets the same telemetry, from the same tools, all at
 once in a single prompt.
 
-## Quick look (no API key)
+## Quick look (one command, no API key)
 
-The dashboard replays saved runs without calling the API:
+Prerequisite: Docker with the Compose plugin. Tested with Docker 29.8.1 and Compose v5.5.1 on Linux. You don't need
+Node.js. From the repo root:
 
 ```bash
-cd packages/dashboard
-npm install
-npm run dev          # http://127.0.0.1:3000
+docker compose -f docker-compose.demo.yml up --build
 ```
 
-Pick a replay, watch the event stream, and open the citations in the final report. Running real agents needs
-the sandbox and an API key; see [Run it](#run-it).
+Open http://127.0.0.1:3000. The first build took about 1.5 minutes here, and the image is about 1.5 GB.
+
+**What the demo shows:** saved runs, replayed. Pick a scenario, press Play, watch the event stream, and open the
+citations in the final report. It makes no API calls and costs nothing.
+
+**What the demo leaves out:** live runs and the trigger/reset buttons are off. The container has no Docker socket, no
+Docker CLI, no API key and no volumes, so it can't reach your Docker daemon or the sandbox, and the MCP server doesn't
+run at all. Running real agents needs the sandbox and an API key on the host; see [Run it](#run-it).
+
+**Stop it:** press Ctrl-C, then remove the container and network:
+
+```bash
+docker compose -f docker-compose.demo.yml down
+```
+
+**If port 3000 is taken:** `up` fails with `failed to bind host port 127.0.0.1:3000/tcp: address already in use`.
+Find what is using it, and stop that process:
+
+```bash
+ss -ltnp | grep ':3000 '
+```
+
+Or change the left side of the port mapping in `docker-compose.demo.yml` to `"127.0.0.1:3001:3000"` and open
+http://127.0.0.1:3001.
 
 ## Architecture
 
@@ -143,16 +164,19 @@ Security:
 
 - **Allow-list:** only scenario ids from `scenarios.json` can be triggered, and their scripts must be plain file
   names in `sandbox/chaos/`; anything else is refused.
-- **Loopback only:** the server binds to 127.0.0.1, every API request must use a loopback Host (against DNS
+- **Loopback only:** on the host the server binds to 127.0.0.1. In the Docker demo it binds to 0.0.0.0 inside the
+  container, and the port is published to the host's 127.0.0.1 only. Every API request must use a loopback Host (against DNS
   rebinding), and POSTs must carry the dashboard's own Origin (against cross-site requests).
 - **Live gate:** live runs return 403 unless `ALLOW_LIVE=true`, and are rate-limited to one start per minute.
+- **Replay-only demo:** with `REPLAY_ONLY=true` (set only in `docker-compose.demo.yml`), trigger and reset return 403
+  and the UI hides them.
 - **Separate processes:** the agent runs in its own child process (`runner/run-agent.ts`), the only child that gets
   the full environment. Chaos scripts run with secret-looking variables and `ALLOW_LIVE` removed from their
   environment, and their output is redacted.
 
 ## Run it
 
-Requires Docker, Node.js and npm. There is no root `package.json`; each package is installed on its own.
+This runs on the host, not in the demo container. Requires Docker, Node.js and npm. There is no root `package.json`; each package is installed on its own.
 
 ```bash
 # Sandbox: start from a clean state (regenerates the deploy history, starts the base services, checks GET /orders)
@@ -188,11 +212,12 @@ ALLOW_LIVE=true npm run dev                     # enables live runs (uses API cr
 - **Phase 7 (extended thinking, measured):** deferred for cost.
 - **Phase 8 (prompt caching, measured):** planned, after Phase 11.
 - **Phase 9 (RAG experiment):** deferred.
-- **Phase 11 (Docker packaging):** not done. There is no `docker-compose.demo.yml` and no one-command startup.
-- **Docker socket:** the MCP server talks to `/var/run/docker.sock` directly, which is effectively root access to
-  the host. "Read-only" is enforced only by the server's own code (`packages/mcp-server/src/docker.ts` calls only
-  list, inspect, logs and stats). A `docker-socket-proxy` in front of the socket is planned for Phase 11 and has
-  not been added.
+- **Phase 11 (Docker packaging):** done as a replay-only demo. The one command shows saved runs, not the whole system:
+  sandbox, agent, trigger/reset and live runs still run on the host.
+- **Docker socket (host runs only):** when run on the host, the MCP server talks to `/var/run/docker.sock` directly,
+  which is effectively root access to the host. "Read-only" is enforced only by the server's own code
+  (`packages/mcp-server/src/docker.ts` calls only list, inspect, logs and stats). No `docker-socket-proxy` was added:
+  the demo container has no Docker access, so nothing there would use one, and a proxy for host runs is not built.
 
 ## Repo layout
 
@@ -203,8 +228,9 @@ sandbox/            Docker Compose: gateway, order-service, postgres; overlays f
 packages/
   mcp-server/       read-only telemetry tools (logs, stats, git history, topology)
   agent/            tool loop, Zod report schema, citation verifier
-  dashboard/        Next.js UI, SSE, replay/live runner, saved replays
+  dashboard/        Next.js UI, SSE, replay/live runner, saved replays, Dockerfile
 evals/              baseline, grader, scenarios.json, benchmark runner, results/
+docker-compose.demo.yml   one-command replay demo
 ```
 
 The sandbox bugs (the pool leak at `/orders/leaky`, the idempotency cache without eviction, the break patch in

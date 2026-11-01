@@ -42,6 +42,9 @@ const busyBody = () => {
   return a && { kind: a.kind, scenario_id: a.scenario_id, since: a.since };
 };
 
+/** The Docker demo: no Docker access in the container, so the chaos scripts cannot run there. */
+const replayOnly = (env: Env) => env.REPLAY_ONLY === "true";
+
 export async function getScenarios(request: Request, deps: Deps): Promise<Response> {
   const refused = guard(request, { post: false });
   if (refused) return refused;
@@ -58,6 +61,7 @@ export async function getConfig(request: Request, deps: Deps): Promise<Response>
   if (refused) return refused;
   return json(200, {
     live_enabled: liveEnabled(deps.env),
+    replay_only: replayOnly(deps.env),
     live_retry_after_s: retryAfterSeconds(deps.now(), deps.stateFile),
     busy: busyBody(),
   });
@@ -66,6 +70,7 @@ export async function getConfig(request: Request, deps: Deps): Promise<Response>
 export async function postScript(request: Request, id: string, kind: "trigger" | "reset", deps: Deps): Promise<Response> {
   const refused = guard(request, { post: true });
   if (refused) return refused;
+  if (replayOnly(deps.env)) return json(403, { error: "trigger and reset are not available in the Docker demo" });
   let script: string;
   try {
     script = resolveScript(id, kind, deps.scenariosFile);

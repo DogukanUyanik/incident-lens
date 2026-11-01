@@ -21,6 +21,7 @@ export interface Busy {
 
 export interface Config {
   live_enabled: boolean;
+  replay_only: boolean;
   live_retry_after_s: number;
   busy: Busy | null;
 }
