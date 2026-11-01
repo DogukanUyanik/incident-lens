@@ -6,18 +6,102 @@ deploy history and topology through four read-only MCP tools, and it chooses whi
 arguments. It is benchmarked against a naive baseline that gets the same telemetry, from the same tools, all at
 once in a single prompt.
 
-## Quick look (no API key)
+## Quick start
 
-The dashboard replays saved runs without calling the API:
+Replay is free and needs no key. A live run needs your own Anthropic API key and costs a few cents.
+
+| Step | API key | Cost |
+|---|---|---|
+| Replay a saved run | no | free |
+| Sandbox, trigger, reset | no | free |
+| Stub live run (`AGENT_STUB=1`, scripted model) | no | free |
+| Real live run | yes | about $0.05 to $0.25 per run |
+
+### Requirements
+
+- **OS:** Linux, tested on Ubuntu 26.04. On macOS, `sandbox/deploy-history/lib.sh` fails because it uses GNU `date -d`,
+  so `reset.sh` and live runs do not work there. WSL2 is untested.
+- **Node.js and npm:** tested with Node 22.22.1 and npm 9.2.0.
+- **For the sandbox and live runs:** Docker with the Compose plugin, tested with Docker 29.8.1 and Compose v5.5.1. The
+  daemon must be running and your user must be able to use it without `sudo` (`docker info` should work). You also
+  need `bash`, `curl` and `git`.
+- **Ports:** 3000 (dashboard, 127.0.0.1 only), 8080 and 4000 (sandbox). 8080 and 4000 are published on all network
+  interfaces, so the deliberately buggy sandbox services can be reached from your network while they run.
+
+### Replay a saved run (no key, no Docker)
 
 ```bash
-cd packages/dashboard
-npm install
+git clone https://github.com/DogukanUyanik/incident-lens.git
+cd incident-lens/packages/dashboard
+npm ci
 npm run dev          # http://127.0.0.1:3000
 ```
 
-Pick a replay, watch the event stream, and open the citations in the final report. Running real agents needs
-the sandbox and an API key; see [Run it](#run-it).
+Pick a scenario, press Play, watch the event stream, and open the citations in the final report.
+
+### Live run
+
+There is no root `package.json`, so each package is installed on its own. From the repo root:
+
+```bash
+# The dashboard, the agent it runs, and the MCP server the agent starts
+(cd packages/dashboard && npm ci)
+(cd packages/agent && npm ci)
+(cd packages/mcp-server && npm ci)
+
+# Your API key: edit packages/agent/.env after copying (it is gitignored)
+cp packages/agent/.env.example packages/agent/.env
+
+# Start the sandbox and generate its deploy history (the first run also pulls and builds images)
+./sandbox/chaos/reset.sh
+
+# Start the dashboard with live runs enabled
+cd packages/dashboard
+ALLOW_LIVE=true npm run dev
+```
+
+Then, at http://127.0.0.1:3000:
+
+1. Pick **corrupt-deploy**, the cheapest scenario, and press **Trigger**. Wait until it shows done.
+2. Switch to **Live** and press **Run live**. This spends API credit. Live runs are limited to one start per minute.
+3. Press **Reset** when you are finished, or before trying another scenario.
+
+Every live run is saved as a new file in `packages/dashboard/replays/live/` and then appears in the Replay list. These
+files are not gitignored, so they show up in `git status`.
+
+Stop the dashboard with Ctrl-C, then stop the sandbox:
+
+```bash
+cd sandbox && docker compose down
+```
+
+**Try the pipeline for free.** Starting the dashboard this way runs a scripted model and scripted telemetry: no key, no
+API call and no Docker. It is not a real investigation, but it does save a replay file like a real run:
+
+```bash
+AGENT_STUB=1 ALLOW_LIVE=true npm run dev
+```
+
+**Expected cost of one live run**, estimated from the benchmark's token counts (5 runs per scenario) at Claude Sonnet
+5.5 list prices of $2 input and $10 output per million tokens. Check
+[current pricing](https://platform.claude.com/docs/en/about-claude/pricing). A single run can cost more than these
+figures, because the agent may take up to 10 turns and a turn can be retried.
+
+| Scenario | Mean | Highest in 5 runs |
+|---|---|---|
+| corrupt-deploy | $0.05 | $0.06 |
+| prometheus-bad-scrape-crash | $0.08 | $0.12 |
+| memory-leak-oom | $0.11 | $0.16 |
+| db-pool-exhaustion | $0.14 | $0.24 |
+
+### Troubleshooting
+
+- **`listen EADDRINUSE: address already in use 127.0.0.1:3000`:** something else is using the port. Find it with
+  `ss -ltnp | grep ':3000 '` and stop it.
+- **`failed to bind host port 0.0.0.0:8080/tcp: address already in use`** from `reset.sh`: the same for port 8080 or
+  4000. Stop that process and run `reset.sh` again.
+- **`failed to connect to the docker API`** from `reset.sh`: Docker is not running or not reachable. Start it, and check
+  with `docker info`.
 
 ## Architecture
 
@@ -150,37 +234,30 @@ Security:
   the full environment. Chaos scripts run with secret-looking variables and `ALLOW_LIVE` removed from their
   environment, and their output is redacted.
 
-## Run it
+## Other commands
 
-Requires Docker, Node.js and npm. There is no root `package.json`; each package is installed on its own.
+These run on the host, after the install steps in [Quick start](#quick-start).
 
 ```bash
-# Sandbox: start from a clean state (regenerates the deploy history, starts the base services, checks GET /orders)
+# Trigger one scenario without the dashboard (reset.sh between scenarios)
 ./sandbox/chaos/reset.sh
-
-# Trigger one scenario (reset.sh between scenarios)
 ./sandbox/chaos/scenario-db-exhaustion.sh
 ./sandbox/chaos/scenario-memory-leak.sh
 ./sandbox/chaos/scenario-corrupt-deploy.sh
 ./sandbox/chaos/scenario-prometheus-bad-scrape.sh
 
-# Agent CLI (needs ANTHROPIC_API_KEY in the environment or in packages/agent/.env)
-(cd packages/mcp-server && npm install)
-cd packages/agent && npm install
+# Agent CLI, uses API credit (from packages/agent/; key from the environment or packages/agent/.env)
 npm start                                       # default alert: gateway 504s on /orders
 npm start -- "users report checkout hanging"   # custom alert
 
-# Evals (from evals/)
-npm install
-npm test                                        # grader, scenario, retry and event tests; no API calls
-npm run check -- --scenario <id>                # check a scenario's precondition only
-npm run bench -- --scenario <id> --runs <N>     # agent + baseline, uses API credit
-
-# Dashboard (from packages/dashboard/)
-npm install
+# Dashboard tests (from packages/dashboard/)
 npm test
-npm run dev                                     # replay only
-ALLOW_LIVE=true npm run dev                     # enables live runs (uses API credit)
+
+# Evals (from evals/; the benchmark reads its key from the environment or evals/.env)
+npm ci
+npm test                                        # grader, scenario, retry and event tests; no API calls
+npm run check -- --scenario <id>                # reset, trigger, precondition, reset; leaves the sandbox running
+npm run bench -- --scenario <id> --runs <N>     # agent + baseline, uses API credit
 ```
 
 ## Status / not done
@@ -188,11 +265,11 @@ ALLOW_LIVE=true npm run dev                     # enables live runs (uses API cr
 - **Phase 7 (extended thinking, measured):** deferred for cost.
 - **Phase 8 (prompt caching, measured):** planned, after Phase 11.
 - **Phase 9 (RAG experiment):** deferred.
-- **Phase 11 (Docker packaging):** not done. There is no `docker-compose.demo.yml` and no one-command startup.
-- **Docker socket:** the MCP server talks to `/var/run/docker.sock` directly, which is effectively root access to
-  the host. "Read-only" is enforced only by the server's own code (`packages/mcp-server/src/docker.ts` calls only
-  list, inspect, logs and stats). A `docker-socket-proxy` in front of the socket is planned for Phase 11 and has
-  not been added.
+- **Phase 11 (clone and run):** done as the steps in [Quick start](#quick-start). The app itself is not containerized;
+  only the sandbox runs in Docker.
+- **Docker socket:** the MCP server runs on the host and talks to `/var/run/docker.sock` directly, which is effectively
+  root access to the host. "Read-only" is enforced only by the server's own code (`packages/mcp-server/src/docker.ts`
+  calls only list, inspect, logs and stats). No `docker-socket-proxy` sits in front of the socket.
 
 ## Repo layout
 
